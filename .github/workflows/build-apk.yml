@@ -44,16 +44,55 @@ jobs:
       - name: Patch auth - skip login for personal use
         working-directory: /tmp/omi
         run: |
-          # Make isSignedIn() always return true so login screen is bypassed
+          # 1. Make isSignedIn() always return true
           sed -i 's/return _auth.currentUser != null && !_auth.currentUser!.isAnonymous;/return true;/' app/lib/providers/auth_provider.dart
-          # Make _signIn call onSignIn directly without Firebase token
+
+          # 2. Bypass _signIn - set uid and call onSignIn directly, skip Firebase
           sed -i 's/String? token = await _getIdToken();/String? token = "ed-pendant-token"; \/\/ bypass Firebase/' app/lib/providers/auth_provider.dart
-          # Set a static uid to avoid FirebaseAuth.instance.currentUser crash
           sed -i "s/String newUid = user.uid;/String newUid = 'ed-pendant-uid';/" app/lib/providers/auth_provider.dart
-          # Skip the user = FirebaseAuth line (make it a no-op)
-          sed -i "s/user = FirebaseAuth.instance.currentUser!;/\/\/ user = FirebaseAuth.instance.currentUser!; \/\/ bypassed/" app/lib/providers/auth_provider.dart
-          echo "Auth patches applied:"
-          grep -n "return true\|ed-pendant\|bypass" app/lib/providers/auth_provider.dart | head -10
+          sed -i "s/user = FirebaseAuth.instance.currentUser!;/\/\/ bypassed/" app/lib/providers/auth_provider.dart
+
+          # 3. Skip all onboarding - go straight to HomePageWrapper
+          # Patch mobile_app.dart to skip aiConsentGiven, onboardingCompleted, permissionsCompleted checks
+          python3 - << PYEOF
+content = open("app/lib/mobile/mobile_app.dart").read()
+# Replace the entire isSignedIn block to always return HomePageWrapper
+old = """        if (authProvider.isSignedIn()) {
+          // Returning users who haven't yet given consent under the new
+          // model must see the consent screen before any AI processing
+          // begins, even if the server says they completed onboarding
+          // previously. OnboardingWrapper renders the consent step in
+          // that case and routes them straight to home after Continue.
+          if (!SharedPreferencesUtil().aiConsentGiven) {
+            return const OnboardingWrapper();
+          }
+          if (SharedPreferencesUtil().onboardingCompleted) {
+            if (!SharedPreferencesUtil().permissionsCompleted) {
+              return const _PermissionsGate();
+            }
+            return const HomePageWrapper();
+          } else {
+            return const OnboardingWrapper();
+          }
+        } else {
+          return const DeviceSelectionPage();
+        }"""
+new = """        if (authProvider.isSignedIn()) {
+          // BYPASS: skip all onboarding for personal use
+          return const HomePageWrapper();
+        } else {
+          return const DeviceSelectionPage();
+        }"""
+if old in content:
+    open("app/lib/mobile/mobile_app.dart", "w").write(content.replace(old, new))
+    print("mobile_app.dart patched - skip onboarding")
+else:
+    print("WARNING: mobile_app.dart pattern not found, trying fallback")
+    print(repr(content[800:1200]))
+PYEOF
+
+          echo "All patches applied"
+          grep -n "BYPASS\|return true\|ed-pendant" app/lib/providers/auth_provider.dart app/lib/mobile/mobile_app.dart | head -10
 
       - name: Set up Java
         uses: actions/setup-java@v4

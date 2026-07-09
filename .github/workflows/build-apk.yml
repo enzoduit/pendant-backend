@@ -40,6 +40,21 @@ jobs:
           cp app/setup/prebuilt/firebase_options.dart app/lib/firebase_options_dev.dart
           echo "Copied firebase_options dart files"
 
+
+      - name: Patch auth - skip login for personal use
+        working-directory: /tmp/omi
+        run: |
+          # Make isSignedIn() always return true so login screen is bypassed
+          sed -i 's/return _auth.currentUser != null && !_auth.currentUser!.isAnonymous;/return true;/' app/lib/providers/auth_provider.dart
+          # Make _signIn call onSignIn directly without Firebase token
+          sed -i 's/String? token = await _getIdToken();/String? token = "ed-pendant-token"; \/\/ bypass Firebase/' app/lib/providers/auth_provider.dart
+          # Set a static uid to avoid FirebaseAuth.instance.currentUser crash
+          sed -i "s/String newUid = user.uid;/String newUid = 'ed-pendant-uid';/" app/lib/providers/auth_provider.dart
+          # Skip the user = FirebaseAuth line (make it a no-op)
+          sed -i "s/user = FirebaseAuth.instance.currentUser!;/\/\/ user = FirebaseAuth.instance.currentUser!; \/\/ bypassed/" app/lib/providers/auth_provider.dart
+          echo "Auth patches applied:"
+          grep -n "return true\|ed-pendant\|bypass" app/lib/providers/auth_provider.dart | head -10
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:

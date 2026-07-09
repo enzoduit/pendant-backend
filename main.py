@@ -297,6 +297,34 @@ async def omi_webhook(request: Request):
     })
 
 
+
+# ---------------------------------------------------------------------------
+# Language endpoint — must return exact schema the app expects
+# ---------------------------------------------------------------------------
+
+@app.patch("/v1/users/language")
+async def set_language(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    lang = data.get("language", "en")
+    multi_lang = ["multi", "de", "es", "fr", "it", "pt", "nl", "pl", "ru", "zh", "ja", "ko", "ar", "tr", "sv", "da", "fi", "no", "cs", "hu", "ro", "uk", "he", "el", "th", "id", "ms", "vi", "hi"]
+    single_language_mode = lang not in multi_lang
+    return JSONResponse({
+        "status": "ok",
+        "message": "Language updated",
+        "single_language_mode": single_language_mode,
+    })
+
+@app.get("/v1/users/language")
+async def get_language():
+    return JSONResponse({
+        "status": "ok",
+        "language": "en",
+        "single_language_mode": False,
+    })
+
 # ---------------------------------------------------------------------------
 # Catch-all — return 200 for any unknown endpoint the Omi app calls
 # This prevents "Error" popups for endpoints we haven't implemented yet

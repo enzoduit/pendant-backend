@@ -6,6 +6,12 @@ import httpx
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+# Allow running directly: python main.py (Railway-friendly)
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
+
 app = FastAPI(title="Pendant Backend", version="1.0.0")
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")

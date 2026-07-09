@@ -86,33 +86,10 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.32.x'
+          flutter-version: '3.44.5'
           channel: stable
           cache: true
 
-      - name: Fix vector_math version conflict
-        working-directory: /tmp/omi
-        run: |
-          # Flutter 3.32 pins flutter_test to vector_math 2.1.4, but Omi requires 2.2.0
-          # Fix: add dependency_overrides so pub get can resolve
-          python3 - << 'PYEOF'
-          import re
-          with open('app/pubspec.yaml', 'r') as f:
-              content = f.read()
-          # Add dependency_overrides section if not present
-          if 'dependency_overrides:' not in content:
-              content += '\ndependency_overrides:\n  vector_math: 2.1.4\n'
-          else:
-              # Insert vector_math into existing overrides
-              content = re.sub(
-                  r'(dependency_overrides:\s*\n)',
-                  r'\1  vector_math: 2.1.4\n',
-                  content
-              )
-          with open('app/pubspec.yaml', 'w') as f:
-              f.write(content)
-          print("pubspec.yaml patched with vector_math override")
-          PYEOF
 
       - name: Flutter pub get
         working-directory: /tmp/omi/app

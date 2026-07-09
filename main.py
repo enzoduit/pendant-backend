@@ -243,6 +243,90 @@ async def omi_webhook(request: Request):
         pushed = False
     return JSONResponse({"status": "ok", "transcript": transcript, "pushed": pushed})
 
+
+# ---------------------------------------------------------------------------
+# POST /v2/sync-local-files — "Transcribir después" mode
+# App sends recorded audio file after conversation ends
+# ---------------------------------------------------------------------------
+
+@app.post("/v2/sync-local-files")
+async def sync_local_files(request: Request):
+    """Receive recorded audio from Omi app, transcribe via Whisper, push to HIS."""
+    import tempfile, os
+    from fastapi import Form
+
+    content_type = request.headers.get("content-type", "")
+    audio_bytes = None
+    filename = "audio.opus"
+
+    if "multipart" in content_type:
+        from starlette.datastructures import UploadFile as StarletteUpload
+        form = await request.form()
+        print(f"[sync] form fields: {list(form.keys())}")
+        for key, val in form.items():
+            if hasattr(val, "read"):
+                audio_bytes = await val.read()
+                filename = val.filename or "audio.opus"
+                print(f"[sync] received file: {filename} ({len(audio_bytes)} bytes)")
+                break
+    else:
+        audio_bytes = await request.body()
+        print(f"[sync] received raw body: {len(audio_bytes)} bytes")
+
+    if not audio_bytes or len(audio_bytes) < 100:
+        print(f"[sync] no audio or too short")
+        return JSONResponse({
+            "failed_segments": 0, "total_segments": 0,
+            "new_memories": [], "updated_memories": [], "errors": []
+        })
+
+    # Transcribe
+    try:
+        mime = "audio/ogg; codecs=opus"
+        if filename.endswith(".wav"):
+            mime = "audio/wav"
+        elif filename.endswith(".mp4") or filename.endswith(".m4a"):
+            mime = "audio/mp4"
+
+        resp = requests.post(
+            "https://api.openai.com/v1/audio/transcriptions",
+            headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
+            files={"file": (filename, audio_bytes, mime)},
+            data={"model": "whisper-1"},
+            timeout=120,
+        )
+        resp.raise_for_status()
+        transcript = resp.json().get("text", "").strip()
+        print(f"[sync] transcript: {transcript[:100]}")
+    except Exception as e:
+        print(f"[sync] Whisper error: {e}")
+        return JSONResponse({
+            "failed_segments": 1, "total_segments": 1,
+            "new_memories": [], "updated_memories": [], "errors": [str(e)]
+        })
+
+    if transcript:
+        ts = datetime.datetime.utcnow()
+        try:
+            push_to_his(transcript, ts)
+        except Exception as e:
+            print(f"[sync] HIS push failed: {e}")
+
+    return JSONResponse({
+        "failed_segments": 0,
+        "total_segments": 1,
+        "new_memories": [],
+        "updated_memories": [],
+        "errors": []
+    })
+
+@app.get("/v2/sync-local-files/{job_id}")
+async def sync_job_status(job_id: str):
+    return JSONResponse({"job_id": job_id, "status": "done", "result": {
+        "failed_segments": 0, "total_segments": 1,
+        "new_memories": [], "updated_memories": [], "errors": []
+    }})
+
 # ---------------------------------------------------------------------------
 # Catch-all for all other Omi endpoints
 # ---------------------------------------------------------------------------

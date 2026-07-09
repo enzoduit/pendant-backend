@@ -7,7 +7,7 @@ import requests
 import httpx
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
-from fastapi.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 # Allow running directly: python main.py (Railway-friendly)
 if __name__ == "__main__":

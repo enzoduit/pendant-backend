@@ -35,14 +35,19 @@ jobs:
           POSTHOG_API_KEY=
           EOF
 
-      - name: Copy google-services.json
+      - name: Copy prebuilt config files
         working-directory: /tmp/omi
         run: |
+          # google-services.json
           mkdir -p app/android/app/src/prod
-          # Use the prebuilt google-services.json from BasedHardware (already in repo)
           cp app/setup/prebuilt/google-services.json app/android/app/src/prod/google-services.json
-          echo "Copied prebuilt google-services.json"
-          ls -la app/android/app/src/prod/
+          echo "Copied google-services.json"
+
+          # firebase_options_dev.dart and firebase_options_prod.dart
+          # main.dart imports both; use the prebuilt file for both flavors
+          cp app/setup/prebuilt/firebase_options.dart app/lib/firebase_options_prod.dart
+          cp app/setup/prebuilt/firebase_options.dart app/lib/firebase_options_dev.dart
+          echo "Copied firebase_options dart files"
 
       - name: Set up Java
         uses: actions/setup-java@v4

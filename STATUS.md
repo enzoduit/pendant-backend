@@ -69,3 +69,4 @@ Full fork details: `OMI_FORK_NOTES.md`
 
 4. **Monitor:** Check Railway logs for successful Whisper transcriptions:
    `railway logs --service pendant-api`
+# Rebuilt Thu Jul  9 11:32:59 PM UTC 2026

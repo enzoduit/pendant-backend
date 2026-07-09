@@ -39,43 +39,10 @@ jobs:
         working-directory: /tmp/omi
         run: |
           mkdir -p app/android/app/src/prod
-          if [ -f app/setup/prebuilt/google-services.json ]; then
-            cp app/setup/prebuilt/google-services.json app/android/app/src/prod/google-services.json
-            echo "Copied prebuilt google-services.json"
-          else
-            echo "Prebuilt google-services.json not found, creating minimal placeholder"
-            cat > app/android/app/src/prod/google-services.json << 'GSJSON'
-          {
-            "project_info": {
-              "project_number": "000000000000",
-              "project_id": "omi-ed-custom",
-              "storage_bucket": "omi-ed-custom.appspot.com"
-            },
-            "client": [
-              {
-                "client_info": {
-                  "mobilesdk_app_id": "1:000000000000:android:0000000000000000",
-                  "android_client_info": {
-                    "package_name": "com.friend.ios"
-                  }
-                },
-                "oauth_client": [],
-                "api_key": [
-                  {
-                    "current_key": "placeholder"
-                  }
-                ],
-                "services": {
-                  "appinvite_service": {
-                    "other_platform_oauth_client": []
-                  }
-                }
-              }
-            ],
-            "configuration_version": "1"
-          }
-          GSJSON
-          fi
+          # Use the prebuilt google-services.json from BasedHardware (already in repo)
+          cp app/setup/prebuilt/google-services.json app/android/app/src/prod/google-services.json
+          echo "Copied prebuilt google-services.json"
+          ls -la app/android/app/src/prod/
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -101,6 +68,8 @@ jobs:
 
       - name: Build APK (debug, prod flavor)
         working-directory: /tmp/omi/app
+        env:
+          CI: ""
         run: flutter build apk --debug --flavor prod
 
       - name: Upload APK artifact

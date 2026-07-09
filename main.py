@@ -1,18 +1,21 @@
 import os
 import uuid
 import datetime
+import asyncio
+import io
 import requests
 import httpx
-from fastapi import FastAPI, UploadFile, File, HTTPException, Request
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
+from fastapi.middleware.base import BaseHTTPMiddleware
 
 # Allow running directly: python main.py (Railway-friendly)
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port)
+    uvicorn.run("main:app", host="0.0.0.0", port=port, ws="websockets")
 
-app = FastAPI(title="Pendant Backend", version="1.0.0")
+app = FastAPI(title="Pendant Backend", version="2.0.0")
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 HIS_TOKEN = os.environ.get("HIS_TOKEN", "")
@@ -20,12 +23,29 @@ HIS_URL = os.environ.get("HIS_URL", "http://188.245.214.39:8765/ingest")
 
 SESSION_ID = "pendant-stream"
 
+# ---------------------------------------------------------------------------
+# Bearer token middleware — accept any bearer token, or no token (personal use)
+# ---------------------------------------------------------------------------
+
+class BearerAuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        # Always allow /health and WebSocket upgrades (handled separately)
+        if request.url.path == "/health":
+            return await call_next(request)
+        # For all other paths: just pass through (no verification needed)
+        return await call_next(request)
+
+app.add_middleware(BearerAuthMiddleware)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 def push_to_his(transcript: str, ts: datetime.datetime) -> dict:
     """Push transcript to Human Input Store."""
     ts_iso = ts.isoformat()
     date_str = ts.strftime("%Y-%m-%d")
-    # uuid5 from session_id + timestamp
     uid = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{SESSION_ID}:{ts_iso}"))
     word_count = len(transcript.split())
 
@@ -52,10 +72,155 @@ def push_to_his(transcript: str, ts: datetime.datetime) -> dict:
     return payload
 
 
+def transcribe_with_whisper(audio_bytes: bytes, language: str = "en") -> str:
+    """Send audio bytes to OpenAI Whisper and return transcript text."""
+    if not OPENAI_API_KEY:
+        raise ValueError("OPENAI_API_KEY not set")
+
+    resp = requests.post(
+        "https://api.openai.com/v1/audio/transcriptions",
+        headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
+        files={"file": ("audio.wav", audio_bytes, "audio/wav")},
+        data={"model": "whisper-1", "language": language},
+        timeout=60,
+    )
+    resp.raise_for_status()
+    return resp.json().get("text", "").strip()
+
+
+# ---------------------------------------------------------------------------
+# Health
+# ---------------------------------------------------------------------------
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}
 
+
+# ---------------------------------------------------------------------------
+# Auth endpoint — Omi calls this on startup
+# ---------------------------------------------------------------------------
+
+@app.post("/v1/auth/authorize")
+async def authorize(request: Request):
+    """Omi auth endpoint — skip Firebase verification for personal use."""
+    # Accept any token, return fixed personal user
+    return JSONResponse({
+        "uid": "ed-pendant",
+        "token": "ed-pendant-session-token",
+        "name": "Ed",
+    })
+
+
+# ---------------------------------------------------------------------------
+# User endpoint
+# ---------------------------------------------------------------------------
+
+@app.get("/v1/me")
+async def get_me():
+    return JSONResponse({
+        "uid": "ed-pendant",
+        "name": "Ed",
+        "email": "e.duit@augedo.com",
+    })
+
+
+# ---------------------------------------------------------------------------
+# Memories endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/v3/memories")
+async def get_memories():
+    return JSONResponse({"memories": []})
+
+
+@app.post("/v3/memories")
+async def create_memory(request: Request):
+    return JSONResponse({"id": "ok"})
+
+
+# ---------------------------------------------------------------------------
+# WebSocket audio streaming — /v4/listen
+# ---------------------------------------------------------------------------
+
+AUDIO_FLUSH_INTERVAL = 30  # seconds
+
+@app.websocket("/v4/listen")
+async def websocket_listen(
+    websocket: WebSocket,
+    uid: str = "ed-pendant",
+    language: str = "en",
+    sample_rate: int = 16000,
+):
+    """
+    Omi app streams binary audio chunks here.
+    Every ~30s (or on disconnect) we transcribe with Whisper + push to HIS.
+    We send back JSON messages: {"text": "...", "is_final": true/false}
+    """
+    await websocket.accept()
+
+    audio_buffer = bytearray()
+    last_flush = asyncio.get_event_loop().time()
+
+    async def flush_buffer(is_final: bool):
+        nonlocal audio_buffer, last_flush
+        if not audio_buffer:
+            return
+        chunk = bytes(audio_buffer)
+        audio_buffer = bytearray()
+        last_flush = asyncio.get_event_loop().time()
+
+        try:
+            text = transcribe_with_whisper(chunk, language=language)
+        except Exception as e:
+            print(f"[ws] Whisper error: {e}")
+            text = ""
+
+        if text:
+            ts = datetime.datetime.utcnow()
+            try:
+                push_to_his(text, ts)
+            except Exception as e:
+                print(f"[ws] HIS push failed: {e}")
+
+            try:
+                await websocket.send_json({"text": text, "is_final": is_final})
+            except Exception:
+                pass
+
+    try:
+        while True:
+            try:
+                # Wait for audio data (binary) or a text ping; timeout every second
+                data = await asyncio.wait_for(websocket.receive(), timeout=1.0)
+            except asyncio.TimeoutError:
+                # Check if we should flush
+                elapsed = asyncio.get_event_loop().time() - last_flush
+                if elapsed >= AUDIO_FLUSH_INTERVAL and audio_buffer:
+                    await flush_buffer(is_final=False)
+                continue
+
+            if data["type"] == "websocket.disconnect":
+                break
+
+            if data["type"] == "websocket.receive":
+                if data.get("bytes"):
+                    audio_buffer.extend(data["bytes"])
+                # Check time-based flush
+                elapsed = asyncio.get_event_loop().time() - last_flush
+                if elapsed >= AUDIO_FLUSH_INTERVAL and audio_buffer:
+                    await flush_buffer(is_final=False)
+
+    except WebSocketDisconnect:
+        pass
+    finally:
+        # Flush remaining audio on disconnect
+        await flush_buffer(is_final=True)
+
+
+# ---------------------------------------------------------------------------
+# Legacy endpoints (kept for compatibility)
+# ---------------------------------------------------------------------------
 
 @app.post("/audio")
 async def transcribe_audio(file: UploadFile = File(...)):
@@ -66,7 +231,6 @@ async def transcribe_audio(file: UploadFile = File(...)):
     audio_bytes = await file.read()
     filename = file.filename or "audio.wav"
 
-    # Call OpenAI Whisper
     try:
         resp = requests.post(
             "https://api.openai.com/v1/audio/transcriptions",
@@ -83,7 +247,6 @@ async def transcribe_audio(file: UploadFile = File(...)):
     if not transcript:
         return JSONResponse({"transcript": "", "pushed": False})
 
-    # Push to Human Input Store
     ts = datetime.datetime.utcnow()
     try:
         his_payload = push_to_his(transcript, ts)
@@ -110,7 +273,6 @@ async def omi_webhook(request: Request):
 
     transcript = data.get("transcript") or data.get("text") or ""
     if not transcript:
-        # Try nested segments
         segments = data.get("segments", [])
         if segments:
             transcript = " ".join(s.get("text", "") for s in segments).strip()

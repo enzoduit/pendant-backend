@@ -1,48 +1,71 @@
 # Pendant Backend — Status
+_Last updated: 2026-07-09_
 
-## ✅ Railway Backend LIVE
+## ✅ Railway Backend
 
-**URL:** https://pendant-backend-production.up.railway.app
-**Health:** https://pendant-backend-production.up.railway.app/health → {"status":"ok"}
-**GitHub:** https://github.com/enzoduit/pendant-backend (private)
-**Deployed:** 2026-07-09
+**URL:** https://pendant-api-production.up.railway.app  
+**GitHub:** https://github.com/enzoduit/pendant-backend  
+**Railway Project:** b60595e4-1b1d-418c-8e51-41fb7006fa0e  
+**Service:** 29ec5ed6-b391-4d42-b15d-d9933428504a  
+
+### Health Check
+```
+GET /health → {"status":"ok"} ✅
+```
 
 ### Endpoints
-- `GET /health` — liveness check
-- `POST /audio` — multipart audio file → Whisper → Human Input Store
-- `POST /webhook` — Omi-style webhook JSON → Human Input Store
+- `GET /health` — health check
+- `POST /audio` — multipart file upload → Whisper → HIS
+- `POST /webhook` — Omi-style JSON webhook → HIS
 
-### Env vars set
-- OPENAI_API_KEY ✅
-- HIS_TOKEN ✅
-- HIS_URL ✅
-
----
-
-## Omi Fork — Findings
-
-See OMI_FORK_NOTES.md for full details.
-
-**TL;DR:**
-- Limitless Pendant IS natively supported in Omi app ✅
-- Backend URL set via `app/.env` key `API_BASE_URL` before Flutter build
-- App uses WebSocket `wss://backend/v4/listen` for real-time audio streaming
-- Also uses REST endpoints for auth/memories
-
-**Easiest path (no APK build needed):**
-1. Use official Omi app from Play Store
-2. In app settings → set Webhook URL to: https://pendant-backend-production.up.railway.app/webhook
-3. Transcripts land in Human Input Store automatically
-
-**Full control path (custom APK):**
-1. Clone enzoduit/pendant-backend (or BasedHardware/omi)
-2. Set API_BASE_URL=https://pendant-backend-production.up.railway.app/ in app/.env
-3. Add WebSocket /v4/listen endpoint to backend (for real-time mode)
-4. Build with: flutter build apk --debug --flavor prod
+### Env Vars Set on Railway
+- `OPENAI_API_KEY` ✅
+- `HIS_TOKEN` ✅
+- `HIS_URL` ✅ (http://188.245.214.39:8765/ingest)
 
 ---
 
-## Next Steps
-1. **Try webhook path first** — install Omi app, pair Limitless Pendant, set webhook URL
-2. If webhook works: done ✅
-3. If custom APK needed: Ed needs Flutter installed, or we build in CI
+## 📱 Omi Fork Summary
+
+### Good News: Limitless Pendant is Already Supported
+The Omi app has native `DeviceType.limitless` support — no hardware hacks needed.
+
+### Backend URL Config
+- File: `app/lib/env/env.dart` + `app/.env` (template at `app/.env.template`)
+- Variable: `API_BASE_URL=https://pendant-api-production.up.railway.app/`
+- Built via `envied` code-gen: `dart run build_runner build`
+
+### Two Integration Paths
+
+#### Path A — Easiest: Official App + Webhook (no build needed)
+1. Install official Omi app on Android
+2. Go to Settings → Developer → Webhook URL
+3. Set to: `https://pendant-api-production.up.railway.app/webhook`
+4. Done — transcripts flow to HIS automatically
+
+#### Path B — Custom APK (full control)
+Fork enzoduit/omi, set `API_BASE_URL` in `.env`, run:
+```
+flutter pub get
+dart run build_runner build --delete-conflicting-outputs
+flutter build apk --debug --flavor prod
+```
+⚠️ Requires Firebase `google-services.json` + Flutter SDK
+
+Full fork details: `OMI_FORK_NOTES.md`
+
+---
+
+## 🔜 Next Steps
+
+1. **Immediate:** Test webhook integration with official Omi app
+   - Set webhook URL in Omi: `https://pendant-api-production.up.railway.app/webhook`
+   - Speak something with the Limitless Pendant
+   - Check HIS: `curl http://188.245.214.39:8765/health`
+
+2. **Optional:** Add WebSocket `/v4/listen` endpoint to pendant-backend for real-time streaming (needed for custom APK path)
+
+3. **Optional:** Custom APK build — needs Firebase project + Flutter SDK on build machine
+
+4. **Monitor:** Check Railway logs for successful Whisper transcriptions:
+   `railway logs --service pendant-api`

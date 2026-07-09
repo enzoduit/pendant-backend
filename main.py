@@ -295,3 +295,31 @@ async def omi_webhook(request: Request):
         "pushed": pushed,
         "his_id": his_payload.get("id"),
     })
+
+
+# ---------------------------------------------------------------------------
+# Catch-all — return 200 for any unknown endpoint the Omi app calls
+# This prevents "Error" popups for endpoints we haven't implemented yet
+# ---------------------------------------------------------------------------
+
+from fastapi import APIRouter
+from fastapi.routing import APIRoute
+from starlette.routing import Route, Mount
+
+@app.api_route("/v1/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+async def v1_catchall(path: str, request: Request):
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+    print(f"[catchall] {request.method} /v1/{path} body={body}")
+    return JSONResponse({"status": "ok", "message": "ok"})
+
+@app.api_route("/v2/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+async def v2_catchall(path: str, request: Request):
+    return JSONResponse({"status": "ok"})
+
+@app.api_route("/v3/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+async def v3_catchall(path: str, request: Request):
+    return JSONResponse({"status": "ok", "memories": [], "conversations": []})

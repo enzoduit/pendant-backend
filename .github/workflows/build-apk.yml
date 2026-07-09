@@ -1,0 +1,111 @@
+name: Build Omi APK (Ed's Custom Backend)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-apk:
+    name: Build Omi Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout pendant-backend
+        uses: actions/checkout@v4
+
+      - name: Clone Omi app (depth 1)
+        run: |
+          git clone --depth 1 https://github.com/BasedHardware/omi.git /tmp/omi
+
+      - name: Create app/.env
+        working-directory: /tmp/omi
+        run: |
+          cat > app/.env << 'EOF'
+          API_BASE_URL=https://pendant-backend-production.up.railway.app/
+          OPENAI_API_KEY=
+          GOOGLE_MAPS_API_KEY=
+          GOOGLE_CLIENT_ID=
+          GOOGLE_CLIENT_SECRET=
+          USE_WEB_AUTH=false
+          USE_AUTH_CUSTOM_TOKEN=false
+          STAGING_API_URL=
+          POSTHOG_API_KEY=
+          EOF
+
+      - name: Copy google-services.json
+        working-directory: /tmp/omi
+        run: |
+          mkdir -p app/android/app/src/prod
+          if [ -f app/setup/prebuilt/google-services.json ]; then
+            cp app/setup/prebuilt/google-services.json app/android/app/src/prod/google-services.json
+            echo "Copied prebuilt google-services.json"
+          else
+            echo "Prebuilt google-services.json not found, creating minimal placeholder"
+            cat > app/android/app/src/prod/google-services.json << 'GSJSON'
+          {
+            "project_info": {
+              "project_number": "000000000000",
+              "project_id": "omi-ed-custom",
+              "storage_bucket": "omi-ed-custom.appspot.com"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:000000000000:android:0000000000000000",
+                  "android_client_info": {
+                    "package_name": "com.friend.ios"
+                  }
+                },
+                "oauth_client": [],
+                "api_key": [
+                  {
+                    "current_key": "placeholder"
+                  }
+                ],
+                "services": {
+                  "appinvite_service": {
+                    "other_platform_oauth_client": []
+                  }
+                }
+              }
+            ],
+            "configuration_version": "1"
+          }
+          GSJSON
+          fi
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.32.x'
+          channel: stable
+          cache: true
+
+      - name: Flutter pub get
+        working-directory: /tmp/omi/app
+        run: flutter pub get
+
+      - name: Build runner (code generation)
+        working-directory: /tmp/omi/app
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Build APK (debug, prod flavor)
+        working-directory: /tmp/omi/app
+        run: flutter build apk --debug --flavor prod
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: omi-ed-debug.apk
+          path: /tmp/omi/app/build/app/outputs/flutter-apk/app-prod-debug.apk
+          retention-days: 30
+          if-no-files-found: warn

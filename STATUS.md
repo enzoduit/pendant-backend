@@ -3,10 +3,12 @@ _Last updated: 2026-07-09_
 
 ## ✅ Railway Backend
 
-**URL:** https://pendant-api-production.up.railway.app  
+**URL (NEW):** https://pendant-backend-production-e97c.up.railway.app  
+**URL (OLD - stale):** https://pendant-api-production.up.railway.app  
 **GitHub:** https://github.com/enzoduit/pendant-backend  
 **Railway Project:** b60595e4-1b1d-418c-8e51-41fb7006fa0e  
-**Service:** 29ec5ed6-b391-4d42-b15d-d9933428504a  
+**Service (NEW):** 9f9bd815-06da-4466-a810-e72f2a1a352a  
+**Service (OLD - stale):** 29ec5ed6-b391-4d42-b15d-d9933428504a  
 
 ### Health Check
 ```

@@ -280,18 +280,80 @@ async def sync_local_files(request: Request):
             "new_memories": [], "updated_memories": [], "errors": []
         })
 
+    # Decode WAL format if .bin file (Omi WAL: [u32_le length][opus frame] repeated)
+    whisper_bytes = audio_bytes
+    whisper_filename = filename
+    if filename.endswith(".bin"):
+        try:
+            import struct, subprocess, tempfile as tf
+            # Extract raw opus frames from WAL framing
+            frames = []
+            offset = 0
+            data = audio_bytes
+            while offset + 4 <= len(data):
+                frame_len = struct.unpack_from("<I", data, offset)[0]
+                offset += 4
+                if frame_len == 0 or offset + frame_len > len(data):
+                    break
+                frames.append(data[offset:offset + frame_len])
+                offset += frame_len
+            print(f"[sync] WAL decoded: {len(frames)} opus frames from {len(audio_bytes)} bytes")
+
+            if frames:
+                # Write frames to temp opus file then convert to wav via ffmpeg
+                tmp_opus = tf.NamedTemporaryFile(suffix=".opus", delete=False)
+                # Wrap in ogg container using ffmpeg from raw opus frames
+                raw_opus_path = tmp_opus.name
+                # Write raw concatenated opus frames
+                tmp_raw = tf.NamedTemporaryFile(suffix=".raw", delete=False)
+                for f in frames:
+                    tmp_raw.write(f)
+                tmp_raw.flush()
+                tmp_raw.close()
+
+                tmp_wav = tf.NamedTemporaryFile(suffix=".wav", delete=False)
+                tmp_wav.close()
+
+                # Use ffmpeg to convert raw opus frames (as ogg) to wav
+                # First wrap in ogg, then to wav
+                result = subprocess.run([
+                    "ffmpeg", "-y",
+                    "-f", "data", "-i", tmp_raw.name,
+                    "-ar", "16000", "-ac", "1",
+                    tmp_wav.name
+                ], capture_output=True, timeout=30)
+
+                if result.returncode != 0:
+                    # Fallback: try treating raw data as opus directly
+                    print(f"[sync] ffmpeg failed ({result.stderr[:100]}), sending raw to whisper")
+                    whisper_bytes = audio_bytes
+                    whisper_filename = "audio.ogg"
+                else:
+                    with open(tmp_wav.name, "rb") as wf:
+                        whisper_bytes = wf.read()
+                    whisper_filename = "audio.wav"
+                    print(f"[sync] converted to wav: {len(whisper_bytes)} bytes")
+
+                import os as _os
+                for p in [tmp_raw.name, tmp_wav.name, tmp_opus.name]:
+                    try: _os.unlink(p)
+                    except: pass
+        except Exception as e:
+            print(f"[sync] WAL decode error: {e}, sending raw")
+            whisper_filename = "audio.ogg"
+
     # Transcribe
     try:
         mime = "audio/ogg; codecs=opus"
-        if filename.endswith(".wav"):
+        if whisper_filename.endswith(".wav"):
             mime = "audio/wav"
-        elif filename.endswith(".mp4") or filename.endswith(".m4a"):
+        elif whisper_filename.endswith(".mp4") or whisper_filename.endswith(".m4a"):
             mime = "audio/mp4"
 
         resp = requests.post(
             "https://api.openai.com/v1/audio/transcriptions",
             headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
-            files={"file": (filename, audio_bytes, mime)},
+            files={"file": (whisper_filename, whisper_bytes, mime)},
             data={"model": "whisper-1"},
             timeout=120,
         )

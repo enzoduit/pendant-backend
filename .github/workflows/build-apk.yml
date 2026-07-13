@@ -23,7 +23,7 @@ jobs:
       - name: Create app/.env
         working-directory: /tmp/omi
         run: |
-          printf 'API_BASE_URL=https://pendant-backend-production-e97c.up.railway.app/\nOPENAI_API_KEY=\nGOOGLE_MAPS_API_KEY=\nGOOGLE_CLIENT_ID=\nGOOGLE_CLIENT_SECRET=\nUSE_WEB_AUTH=false\nUSE_AUTH_CUSTOM_TOKEN=false\nSTAGING_API_URL=\nPOSTHOG_API_KEY=\n' > app/.env
+          printf 'API_BASE_URL=https://elegant-solace-production-e61a.up.railway.app/\nOPENAI_API_KEY=\nGOOGLE_MAPS_API_KEY=\nGOOGLE_CLIENT_ID=\nGOOGLE_CLIENT_SECRET=\nUSE_WEB_AUTH=false\nUSE_AUTH_CUSTOM_TOKEN=false\nSTAGING_API_URL=\nPOSTHOG_API_KEY=\n' > app/.env
           echo "=== .env contents ===" && cat app/.env
 
       - name: Copy prebuilt config files

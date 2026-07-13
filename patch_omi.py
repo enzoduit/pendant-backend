@@ -29,65 +29,11 @@ with open(auth_path, "w") as f:
     f.write(auth)
 print("auth_provider.dart patched")
 
-# 2. Patch mobile_app.dart - skip onboarding, go straight to HomePageWrapper
-app_path = f"{base}/mobile/mobile_app.dart"
-with open(app_path) as f:
-    app = f.read()
-
-# Find and replace the signed-in block
-old_block = """        if (authProvider.isSignedIn()) {
-          // Returning users who haven't yet given consent under the new
-          // model must see the consent screen before any AI processing
-          // begins, even if the server says they completed onboarding
-          // previously. OnboardingWrapper renders the consent step in
-          // that case and routes them straight to home after Continue.
-          if (!SharedPreferencesUtil().aiConsentGiven) {
-            return const OnboardingWrapper();
-          }
-          if (SharedPreferencesUtil().onboardingCompleted) {
-            if (!SharedPreferencesUtil().permissionsCompleted) {
-              return const _PermissionsGate();
-            }
-            return const HomePageWrapper();
-          } else {
-            return const OnboardingWrapper();
-          }
-        } else {
-          return const DeviceSelectionPage();
-        }"""
-
-new_block = """        if (authProvider.isSignedIn()) {
-          // BYPASS: skip onboarding for personal use
-          return const HomePageWrapper();
-        } else {
-          return const DeviceSelectionPage();
-        }"""
-
-if old_block in app:
-    app = app.replace(old_block, new_block)
-    print("mobile_app.dart patched - onboarding bypassed")
-else:
-    print("WARNING: mobile_app.dart pattern not found exactly, trying regex")
-    # Fallback: simpler replacement
-    app = re.sub(
-        r'if \(authProvider\.isSignedIn\(\)\) \{.*?return const DeviceSelectionPage\(\);',
-        'if (authProvider.isSignedIn()) {\n          return const HomePageWrapper(); // BYPASS\n        } else {\n          return const DeviceSelectionPage();',
-        app, flags=re.DOTALL
-    )
-    print("mobile_app.dart patched via regex")
-
-with open(app_path, "w") as f:
-    f.write(app)
-
-print("All patches done!")
-
-# 3. Pre-seed paired Limitless Pendant device into SharedPreferences
-# so the app auto-reconnects on startup without going through onboarding
+# 2. Pre-seed paired Limitless Pendant device into SharedPreferences
 prefs_path = f"{base}/backend/preferences.dart"
 with open(prefs_path) as f:
     prefs = f.read()
 
-# Inject device pre-seeding into the SharedPreferencesUtil constructor or init
 DEVICE_SEED = '''
   // BYPASS: pre-seed Limitless Pendant so app reconnects without onboarding
   void seedLimitlessDevice() {
@@ -96,10 +42,11 @@ DEVICE_SEED = '''
     saveString('btDevice', deviceJson);
     saveBool('onboardingCompleted', true);
     saveBool('deviceOnboardingCompleted', true);
+    saveBool('permissionsCompleted', true);
+    saveBool('aiConsentGiven', true);
   }
 '''
 
-# Find the class declaration and inject after it
 target = "class SharedPreferencesUtil {"
 if target in prefs and "seedLimitlessDevice" not in prefs:
     prefs = prefs.replace(target, target + DEVICE_SEED)
@@ -109,19 +56,40 @@ if target in prefs and "seedLimitlessDevice" not in prefs:
 else:
     print("preferences.dart: skipped (already patched or target not found)")
 
-# 4. Call seedLimitlessDevice() early in the app lifecycle
+# 3. Patch mobile_app.dart - replace entire Consumer/auth routing with direct HomePageWrapper
 app_path = f"{base}/mobile/mobile_app.dart"
 with open(app_path) as f:
     app = f.read()
 
-seed_call = "SharedPreferencesUtil().seedLimitlessDevice(); // BYPASS: auto-pair pendant"
+# Strategy: replace the entire build() method body using regex (robust to comment changes)
+# Match from the Consumer<AuthenticationProvider> to the closing brace of the else block
+bypass_build = """  @override
+  Widget build(BuildContext context) {
+    // BYPASS: skip Firebase auth entirely, go straight to home
+    SharedPreferencesUtil().seedLimitlessDevice();
+    return const HomePageWrapper();
+  }
+}"""
 
-# Inject before the isSignedIn check
-target = "if (authProvider.isSignedIn()) {"
-if target in app and "seedLimitlessDevice" not in app:
-    app = app.replace(target, seed_call + "\n        " + target, 1)
+# Find the class that contains the routing Consumer and replace its build method
+# Target the pattern: @override\n  Widget build ... Consumer<AuthenticationProvider> ... DeviceSelectionPage
+pattern = r'(@override\s+Widget build\(BuildContext context\)\s*\{.*?Consumer<AuthenticationProvider>.*?DeviceSelectionPage\(\);\s*\}\s*\}\s*\}\s*\})'
+match = re.search(pattern, app, re.DOTALL)
+if match:
+    app = app[:match.start()] + bypass_build + app[match.end():]
     with open(app_path, "w") as f:
         f.write(app)
-    print("mobile_app.dart patched with seedLimitlessDevice() call")
+    print("mobile_app.dart patched - Consumer replaced with direct HomePageWrapper")
 else:
-    print("mobile_app.dart: skipped")
+    # Fallback: just patch the isSignedIn check
+    print("WARNING: regex pattern not found, trying simpler patch")
+    app = re.sub(
+        r'if \(authProvider\.isSignedIn\(\)\) \{.*?return const DeviceSelectionPage\(\);\s*\}',
+        'return const HomePageWrapper(); // BYPASS',
+        app, flags=re.DOTALL, count=1
+    )
+    with open(app_path, "w") as f:
+        f.write(app)
+    print("mobile_app.dart patched via fallback regex")
+
+print("All patches done!")

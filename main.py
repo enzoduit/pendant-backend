@@ -281,11 +281,24 @@ async def sync_local_files(request: Request):
         })
 
     # Decode WAL format if .bin file (Omi WAL: [u32_le length][opus frame] repeated)
+    # Uses opuslib to decode raw Opus frames -> PCM -> WAV (same as OMI backend)
     whisper_bytes = audio_bytes
     whisper_filename = filename
     if filename.endswith(".bin"):
         try:
-            import struct, subprocess, tempfile as tf
+            import struct, wave, io
+            # Parse sample rate and frame size from filename
+            # e.g. audio_omibatchlimitless_opus_fs320_16000_1_fs320_1783950337.bin
+            sample_rate = 16000
+            channels = 1
+            frame_size = 320  # default for Limitless
+            parts = filename.replace(".bin", "").split("_")
+            for i, p in enumerate(parts):
+                if p.isdigit() and int(p) in (8000, 16000, 24000, 48000):
+                    sample_rate = int(p)
+                if p.startswith("fs") and p[2:].isdigit():
+                    frame_size = int(p[2:])
+
             # Extract raw opus frames from WAL framing
             frames = []
             offset = 0
@@ -293,53 +306,31 @@ async def sync_local_files(request: Request):
             while offset + 4 <= len(data):
                 frame_len = struct.unpack_from("<I", data, offset)[0]
                 offset += 4
-                if frame_len == 0 or offset + frame_len > len(data):
+                if frame_len == 0 or frame_len > 65536 or offset + frame_len > len(data):
                     break
                 frames.append(data[offset:offset + frame_len])
                 offset += frame_len
-            print(f"[sync] WAL decoded: {len(frames)} opus frames from {len(audio_bytes)} bytes")
+            print(f"[sync] WAL decoded: {len(frames)} opus frames, sr={sample_rate}, fs={frame_size}")
 
             if frames:
-                # Write frames to temp opus file then convert to wav via ffmpeg
-                tmp_opus = tf.NamedTemporaryFile(suffix=".opus", delete=False)
-                # Wrap in ogg container using ffmpeg from raw opus frames
-                raw_opus_path = tmp_opus.name
-                # Write raw concatenated opus frames
-                tmp_raw = tf.NamedTemporaryFile(suffix=".raw", delete=False)
-                for f in frames:
-                    tmp_raw.write(f)
-                tmp_raw.flush()
-                tmp_raw.close()
-
-                tmp_wav = tf.NamedTemporaryFile(suffix=".wav", delete=False)
-                tmp_wav.close()
-
-                # Use ffmpeg to convert raw opus frames (as ogg) to wav
-                # First wrap in ogg, then to wav
-                result = subprocess.run([
-                    "ffmpeg", "-y",
-                    "-f", "data", "-i", tmp_raw.name,
-                    "-ar", "16000", "-ac", "1",
-                    tmp_wav.name
-                ], capture_output=True, timeout=30)
-
-                if result.returncode != 0:
-                    # Fallback: try treating raw data as opus directly
-                    print(f"[sync] ffmpeg failed ({result.stderr[:100]}), sending raw to whisper")
-                    whisper_bytes = audio_bytes
-                    whisper_filename = "audio.ogg"
-                else:
-                    with open(tmp_wav.name, "rb") as wf:
-                        whisper_bytes = wf.read()
-                    whisper_filename = "audio.wav"
-                    print(f"[sync] converted to wav: {len(whisper_bytes)} bytes")
-
-                import os as _os
-                for p in [tmp_raw.name, tmp_wav.name, tmp_opus.name]:
-                    try: _os.unlink(p)
-                    except: pass
+                import opuslib
+                decoder = opuslib.Decoder(sample_rate, channels)
+                wav_buf = io.BytesIO()
+                with wave.open(wav_buf, 'wb') as wf:
+                    wf.setnchannels(channels)
+                    wf.setsampwidth(2)  # 16-bit PCM
+                    wf.setframerate(sample_rate)
+                    for frame in frames:
+                        try:
+                            pcm = decoder.decode(bytes(frame), frame_size=frame_size)
+                            wf.writeframes(pcm)
+                        except Exception:
+                            continue  # skip bad frames
+                whisper_bytes = wav_buf.getvalue()
+                whisper_filename = "audio.wav"
+                print(f"[sync] opuslib decode ok: {len(whisper_bytes)} bytes WAV from {len(frames)} frames")
         except Exception as e:
-            print(f"[sync] WAL decode error: {e}, sending raw")
+            print(f"[sync] WAL decode error: {e}, sending raw as ogg")
             whisper_filename = "audio.ogg"
 
     # Transcribe

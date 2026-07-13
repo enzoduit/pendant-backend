@@ -93,3 +93,19 @@ else:
     print("mobile_app.dart patched via fallback regex")
 
 print("All patches done!")
+
+# 5. Patch auth_service.dart - make getIdToken() always return permanent fake token
+auth_svc_path = f"{base}/services/auth_service.dart"
+with open(auth_svc_path) as f:
+    svc = f.read()
+
+old_getid = "  Future<String?> getIdToken() async {"
+bypass_line = "    // BYPASS: permanent fake token\n    SharedPreferencesUtil().authToken = 'ed-pendant-token';\n    SharedPreferencesUtil().tokenExpirationTime = DateTime.now().add(const Duration(days: 3650)).millisecondsSinceEpoch;\n    return 'ed-pendant-token';"
+
+if old_getid in svc and "BYPASS: permanent" not in svc:
+    svc = svc.replace(old_getid, old_getid + "\n" + bypass_line, 1)
+    with open(auth_svc_path, "w") as f:
+        f.write(svc)
+    print("auth_service.dart patched - getIdToken returns permanent fake token")
+else:
+    print("auth_service.dart: skipped (already patched or not found)")

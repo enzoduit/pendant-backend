@@ -80,3 +80,48 @@ with open(app_path, "w") as f:
     f.write(app)
 
 print("All patches done!")
+
+# 3. Pre-seed paired Limitless Pendant device into SharedPreferences
+# so the app auto-reconnects on startup without going through onboarding
+prefs_path = f"{base}/backend/preferences.dart"
+with open(prefs_path) as f:
+    prefs = f.read()
+
+# Inject device pre-seeding into the SharedPreferencesUtil constructor or init
+DEVICE_SEED = '''
+  // BYPASS: pre-seed Limitless Pendant so app reconnects without onboarding
+  void seedLimitlessDevice() {
+    if (getString('btDevice')?.isNotEmpty == true) return; // already set
+    const deviceJson = '{"name":"Pendant","id":"FD:04:D0:EB:84:88","type":"limitless","rssi":-60,"locator":null,"modelNumber":"Limitless Pendant","firmwareRevision":"1.0.0","hardwareRevision":"Unknown","manufacturerName":"Limitless","serialNumber":null}';
+    saveString('btDevice', deviceJson);
+    saveBool('onboardingCompleted', true);
+    saveBool('deviceOnboardingCompleted', true);
+  }
+'''
+
+# Find the class declaration and inject after it
+target = "class SharedPreferencesUtil {"
+if target in prefs and "seedLimitlessDevice" not in prefs:
+    prefs = prefs.replace(target, target + DEVICE_SEED)
+    with open(prefs_path, "w") as f:
+        f.write(prefs)
+    print("preferences.dart patched with seedLimitlessDevice()")
+else:
+    print("preferences.dart: skipped (already patched or target not found)")
+
+# 4. Call seedLimitlessDevice() early in the app lifecycle
+app_path = f"{base}/mobile/mobile_app.dart"
+with open(app_path) as f:
+    app = f.read()
+
+seed_call = "SharedPreferencesUtil().seedLimitlessDevice(); // BYPASS: auto-pair pendant"
+
+# Inject before the isSignedIn check
+target = "if (authProvider.isSignedIn()) {"
+if target in app and "seedLimitlessDevice" not in app:
+    app = app.replace(target, seed_call + "\n        " + target, 1)
+    with open(app_path, "w") as f:
+        f.write(app)
+    print("mobile_app.dart patched with seedLimitlessDevice() call")
+else:
+    print("mobile_app.dart: skipped")

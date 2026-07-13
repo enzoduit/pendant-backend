@@ -396,6 +396,26 @@ async def sync_job_status(job_id: str):
 @app.api_route("/v1/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
 async def v1_catchall(path: str, request: Request):
     print(f"[catchall] {request.method} /v1/{path}")
+    # Endpoints that expect a JSON array
+    if path.startswith("conversations") or path.startswith("memories") or path.startswith("action-items"):
+        return JSONResponse([])
+    # Endpoints that expect specific shapes
+    if path == "users/me/subscription":
+        return JSONResponse({"is_premium": True, "product_id": "none", "platform": "none"})
+    if path.startswith("goals"):
+        return JSONResponse([])
+    if path.startswith("folders"):
+        return JSONResponse([])
+    if path.startswith("users/people"):
+        return JSONResponse([])
+    if path.startswith("apps") or path.startswith("app-categories") or path.startswith("app-capabilities") or path.startswith("app/plans"):
+        return JSONResponse([])
+    if path.startswith("announcements"):
+        return JSONResponse([])
+    if path.startswith("task-integrations"):
+        return JSONResponse([])
+    if path.startswith("phone"):
+        return JSONResponse([])
     return JSONResponse({"status": "ok", "message": "ok"})
 
 @app.api_route("/v2/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])

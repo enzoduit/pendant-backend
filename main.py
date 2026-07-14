@@ -20,6 +20,36 @@ SESSION_ID = "pendant-stream"
 # Helpers
 # ---------------------------------------------------------------------------
 
+# Known Whisper hallucinations on silence/noise
+WHISPER_HALLUCINATIONS = {
+    "谢谢观看", "谢谢观看 欢迎订阅我的频道", "欢迎订阅我的频道",
+    "thank you for watching", "thanks for watching",
+    "please subscribe", "like and subscribe",
+    "ご視聴ありありがとうございました", "字幕",
+    "subtitles by", "transcribed by", "www.",
+    "[music]", "[applause]", "[silence]", "[ silence ]",
+    "you", ".", "..", "...", "♪", "♫",
+}
+
+def is_hallucination(text: str) -> bool:
+    """Detect Whisper hallucinations on silent/noisy audio."""
+    if not text or len(text.strip()) < 3:
+        return True
+    t = text.strip().lower()
+    # Check exact matches
+    if t in {h.lower() for h in WHISPER_HALLUCINATIONS}:
+        return True
+    # Check if it's just punctuation/symbols
+    if all(c in '.,!?;:()[]{}♪♫-_=+*/\|<>'"` 	
+' for c in t):
+        return True
+    # Very short with no real words
+    words = [w for w in t.split() if len(w) > 1]
+    if len(words) == 0:
+        return True
+    return False
+
+
 def push_to_his(transcript: str, ts: datetime.datetime) -> dict:
     ts_iso = ts.isoformat()
     date_str = ts.strftime("%Y-%m-%d")

@@ -109,3 +109,32 @@ if old_getid in svc and "BYPASS: permanent" not in svc:
     print("auth_service.dart patched - getIdToken returns permanent fake token")
 else:
     print("auth_service.dart: skipped (already patched or not found)")
+
+# 6. Patch shared.dart - make _isRequiredAuthCheck always return false for our backend
+# This prevents any auth token logic entirely - no Firebase calls needed
+shared_path = f"{base}/backend/http/shared.dart"
+with open(shared_path) as f:
+    shared = f.read()
+
+old_auth_check = """bool _isRequiredAuthCheck(String url) {
+  // Agent VM endpoints always hit prod even when app uses dev
+  if (url.contains('api.omi.me')) return true;
+  if (url.contains(Env.apiBaseUrl!)) {
+    return true;
+  }
+  return false;
+}"""
+
+new_auth_check = """bool _isRequiredAuthCheck(String url) {
+  // BYPASS: no auth required for personal backend
+  if (url.contains('api.omi.me')) return true;
+  return false;
+}"""
+
+if old_auth_check in shared and "BYPASS: no auth required" not in shared:
+    shared = shared.replace(old_auth_check, new_auth_check)
+    with open(shared_path, "w") as f:
+        f.write(shared)
+    print("shared.dart patched - _isRequiredAuthCheck always false for our backend")
+else:
+    print("shared.dart: skipped (already patched or pattern not found)")

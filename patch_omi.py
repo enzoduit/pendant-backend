@@ -37,7 +37,11 @@ with open(prefs_path) as f:
 DEVICE_SEED = '''
   // BYPASS: pre-seed Limitless Pendant so app reconnects without onboarding
   void seedLimitlessDevice() {
-    if (getString('btDevice')?.isNotEmpty == true) return; // already set
+    // Always set sync prefs, even if device already seeded
+    saveBool('autoSyncOfflineRecordings', true);  // BYPASS: ensure auto-sync is on
+    saveBool('useCustomStt', false);  // BYPASS: must be false for auto-upload to work
+    saveBool('batchModeEnabled', true);  // BYPASS: Transcribe Later mode for Limitless
+    if (getString('btDevice')?.isNotEmpty == true) return;
     const deviceJson = '{"name":"Pendant","id":"FD:04:D0:EB:84:88","type":"limitless","rssi":-60,"locator":null,"modelNumber":"Limitless Pendant","firmwareRevision":"1.0.0","hardwareRevision":"Unknown","manufacturerName":"Limitless","serialNumber":null}';
     saveString('btDevice', deviceJson);
     saveBool('onboardingCompleted', true);

@@ -145,3 +145,27 @@ if old_auth_check in shared and "BYPASS: no auth required" not in shared:
     print("shared.dart patched - _isRequiredAuthCheck always false for our backend")
 else:
     print("shared.dart: skipped (already patched or pattern not found)")
+
+# 7. Patch sync_provider.dart — trigger auto-upload when new WALs arrive (flash drain fix)
+# Root cause: _scheduleAutoUploadPendingPhoneFiles only fires once at startup (3s delay)
+# Flash drain from Limitless takes longer → WALs arrive after that window → never uploaded
+sync_provider_path = f"{base}/providers/sync_provider.dart"
+with open(sync_provider_path) as f:
+    sp = f.read()
+
+old_wal_updated = "  void onWalUpdated() async {\n    await refreshWals();\n  }"
+new_wal_updated = """  void onWalUpdated() async {
+    await refreshWals();
+    // BYPASS: re-trigger auto-upload when WALs arrive (e.g. after flash drain completes)
+    if (!_syncState.isProcessing && !_isAutoUploading) {
+      _scheduleAutoUploadPendingPhoneFiles();
+    }
+  }"""
+
+if old_wal_updated in sp and "re-trigger auto-upload" not in sp:
+    sp = sp.replace(old_wal_updated, new_wal_updated)
+    with open(sync_provider_path, "w") as f:
+        f.write(sp)
+    print("sync_provider.dart patched: onWalUpdated re-triggers auto-upload after flash drain")
+else:
+    print("sync_provider.dart: already patched or pattern not found")

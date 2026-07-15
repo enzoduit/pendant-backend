@@ -42,6 +42,9 @@ DEVICE_SEED = '''
     saveString('btDevice', deviceJson);
     saveBool('onboardingCompleted', true);
     saveBool('deviceOnboardingCompleted', true);
+    saveBool('autoSyncOfflineRecordings', true);  // BYPASS: ensure auto-sync is on
+    saveBool('useCustomStt', false);  // BYPASS: must be false for auto-upload to work
+    saveBool('batchModeEnabled', true);  // BYPASS: Transcribe Later mode for Limitless
     saveBool('permissionsCompleted', true);
     saveBool('aiConsentGiven', true);
   }

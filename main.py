@@ -40,8 +40,7 @@ def is_hallucination(text: str) -> bool:
     if t in {h.lower() for h in WHISPER_HALLUCINATIONS}:
         return True
     # Check if it's just punctuation/symbols
-    if all(c in '.,!?;:()[]{}♪♫-_=+*/\|<>'"` 	
-' for c in t):
+    if all(c in '.,!?;:()[]{}♪♫-_=+*/|<>` \t\n' for c in t):
         return True
     # Very short with no real words
     words = [w for w in t.split() if len(w) > 1]

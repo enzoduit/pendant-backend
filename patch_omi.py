@@ -41,6 +41,7 @@ DEVICE_SEED = '''
     saveBool('autoSyncOfflineRecordings', true);  // BYPASS: ensure auto-sync is on
     saveBool('useCustomStt', false);  // BYPASS: must be false for auto-upload to work
     saveBool('batchModeEnabled', true);  // BYPASS: Transcribe Later mode for Limitless
+    saveBool('unlimitedLocalStorageEnabled', true);  // BYPASS: must be true for flash WALs to be stored locally
     if (getString('btDevice')?.isNotEmpty == true) return;
     const deviceJson = '{"name":"Pendant","id":"FD:04:D0:EB:84:88","type":"limitless","rssi":-60,"locator":null,"modelNumber":"Limitless Pendant","firmwareRevision":"1.0.0","hardwareRevision":"Unknown","manufacturerName":"Limitless","serialNumber":null}';
     saveString('btDevice', deviceJson);
@@ -49,6 +50,7 @@ DEVICE_SEED = '''
     saveBool('autoSyncOfflineRecordings', true);  // BYPASS: ensure auto-sync is on
     saveBool('useCustomStt', false);  // BYPASS: must be false for auto-upload to work
     saveBool('batchModeEnabled', true);  // BYPASS: Transcribe Later mode for Limitless
+    saveBool('unlimitedLocalStorageEnabled', true);  // BYPASS: must be true for flash WALs to be stored locally
     saveBool('permissionsCompleted', true);
     saveBool('aiConsentGiven', true);
   }

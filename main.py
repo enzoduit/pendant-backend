@@ -358,6 +358,12 @@ async def sync_local_files(request: Request):
                 whisper_bytes = wav_buf.getvalue()
                 whisper_filename = "audio.wav"
                 print(f"[sync] opuslib decode ok: {len(whisper_bytes)} bytes WAV from {len(frames)} frames")
+                # Truncate to 24MB max (Whisper limit is 25MB)
+                MAX_WHISPER_BYTES = 24 * 1024 * 1024
+                if len(whisper_bytes) > MAX_WHISPER_BYTES:
+                    # Keep header (44 bytes) + truncate audio data
+                    whisper_bytes = whisper_bytes[:44] + whisper_bytes[44:MAX_WHISPER_BYTES]
+                    print(f"[sync] truncated to {len(whisper_bytes)} bytes for Whisper limit")
         except Exception as e:
             print(f"[sync] WAL decode error: {e}, sending raw as ogg")
             whisper_filename = "audio.ogg"

@@ -420,6 +420,9 @@ async def v1_catchall(path: str, request: Request):
     # Endpoints that expect a JSON array
     if path.startswith("conversations") or path.startswith("memories") or path.startswith("action-items"):
         return JSONResponse([])
+    # Fair-use status: must return stage=none to unlock uploads
+    if path == "fair-use/status" or "fair-use" in path:
+        return JSONResponse({"stage": "none", "status": "ok"})
     # Endpoints that expect specific shapes
     if path == "users/me/subscription":
         return JSONResponse({"is_premium": True, "product_id": "none", "platform": "none"})

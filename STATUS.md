@@ -3,7 +3,7 @@ _Last updated: 2026-07-09_
 
 ## ✅ Railway Backend
 
-**URL (NEW):** https://pendant-backend-production-e97c.up.railway.app  
+**URL (STABLE - use this in APK):** https://pendant-backend-production-e97c.up.railway.app  
 **URL (OLD - stale):** https://pendant-api-production.up.railway.app  
 **GitHub:** https://github.com/enzoduit/pendant-backend  
 **Railway Project:** b60595e4-1b1d-418c-8e51-41fb7006fa0e  

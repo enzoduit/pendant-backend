@@ -448,3 +448,26 @@ async def v2_catchall(path: str, request: Request):
 @app.api_route("/v3/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
 async def v3_catchall(path: str, request: Request):
     return JSONResponse({"status": "ok", "memories": [], "conversations": []})
+
+
+# ---------------------------------------------------------------------------
+# Debug log endpoint — app sends decision trace here
+# ---------------------------------------------------------------------------
+_debug_log = []
+
+@app.post("/v1/debug/log")
+async def debug_log(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        data = {"raw": await request.text()}
+    entry = {"ts": datetime.datetime.utcnow().isoformat(), **data}
+    _debug_log.append(entry)
+    if len(_debug_log) > 500:
+        _debug_log.pop(0)
+    print(f"[DEBUG] {entry}")
+    return JSONResponse({"ok": True})
+
+@app.get("/v1/debug/log")
+async def get_debug_log():
+    return JSONResponse({"entries": _debug_log[-100:]})

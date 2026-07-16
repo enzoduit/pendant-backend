@@ -170,3 +170,95 @@ if old_wal_updated in sp and "BYPASS: wake transfer" not in sp:
     print("sync_provider.dart patched: onWalUpdated wakes coordinator after flash drain")
 else:
     print(f"sync_provider.dart: pattern found={old_wal_updated in sp}, already patched={'BYPASS: wake transfer' in sp}")
+
+# 8. Patch recording_transfer_coordinator.dart — send debug trace to our backend
+# So we can see exactly where the upload gets blocked
+coordinator_path = f"{base}/services/wals/recording_transfer_coordinator.dart"
+with open(coordinator_path) as f:
+    coord = f.read()
+
+debug_import = "import 'dart:async';\n"
+debug_util = """import 'dart:async';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:omi/env/env.dart';
+
+Future<void> _debugLog(String event, Map<String, dynamic> data) async {
+  try {
+    final url = '${Env.apiBaseUrl}v1/debug/log';
+    await http.post(Uri.parse(url),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'event': event, ...data}));
+  } catch (_) {}
+}
+
+"""
+
+if debug_import in coord and "_debugLog" not in coord:
+    coord = coord.replace(debug_import, debug_util)
+
+    # Patch _runPass to log key decisions
+    old_may_upload = "      final mayUpload = trigger == WakeTrigger.userRetry || _autoUploadEnabled();\n      if (!mayUpload) return;"
+    new_may_upload = """      final autoEnabled = _autoUploadEnabled();
+      final mayUpload = trigger == WakeTrigger.userRetry || autoEnabled;
+      unawaited(_debugLog('may_upload_check', {'trigger': trigger.name, 'autoEnabled': autoEnabled, 'mayUpload': mayUpload}));
+      if (!mayUpload) {
+        unawaited(_debugLog('upload_blocked', {'reason': 'autoUploadEnabled=false'}));
+        return;
+      }"""
+
+    if old_may_upload in coord:
+        coord = coord.replace(old_may_upload, new_may_upload)
+        print("coordinator: may_upload debug patch applied")
+    else:
+        print("coordinator: may_upload pattern not found")
+
+    # Patch drain result logging
+    old_drain = "      final result = await _drain();"
+    new_drain = """      unawaited(_debugLog('drain_starting', {'trigger': trigger.name}));
+      final result = await _drain();
+      unawaited(_debugLog('drain_result', {'attempted': result.attempted, 'failed': result.failed, 'contended': result.contended}));"""
+
+    if old_drain in coord:
+        coord = coord.replace(old_drain, new_drain)
+        print("coordinator: drain debug patch applied")
+    else:
+        print("coordinator: drain pattern not found")
+
+    with open(coordinator_path, "w") as f:
+        f.write(coord)
+    print("recording_transfer_coordinator.dart patched with debug logging")
+else:
+    print(f"coordinator: skipped (already patched={_debugLog in coord})")
+
+# 9. Patch sync_upload_gate.dart — log when gate blocks uploads
+gate_path = f"{base}/services/wals/sync_upload_gate.dart"
+with open(gate_path) as f:
+    gate = f.read()
+
+if "_debugLog" not in gate and "prepareToUpload" in gate:
+    old_prepare = "    if (lane == SyncUploadLane.fresh && _limiter.hasPersistedFairUseState) {\n      await reconcileFairUseStatus();\n    }\n    return !_limiter.isLimitedForLane(lane.name);"
+    new_prepare = """    if (lane == SyncUploadLane.fresh && _limiter.hasPersistedFairUseState) {
+      await reconcileFairUseStatus();
+    }
+    final allowed = !_limiter.isLimitedForLane(lane.name);
+    try {
+      final url = Uri.parse('\${_uploader.toString().contains("http") ? "" : ""}');
+      // minimal debug — just print to console since we don't have easy access to apiBaseUrl here
+    } catch (_) {}
+    return allowed;"""
+
+    # Simpler: just add a print statement
+    old_return = "    return !_limiter.isLimitedForLane(lane.name);"
+    new_return = """    final _gateAllowed = !_limiter.isLimitedForLane(lane.name);
+    // ignore: avoid_print
+    print('[GATE] prepareToUpload lane=${lane.name} allowed=$_gateAllowed hasPersistedFairUse=${_limiter.hasPersistedFairUseState}');
+    return _gateAllowed;"""
+
+    if old_return in gate:
+        gate = gate.replace(old_return, new_return, 1)
+        with open(gate_path, "w") as f:
+            f.write(gate)
+        print("sync_upload_gate.dart patched with gate logging")
+    else:
+        print("sync_upload_gate.dart: return pattern not found")

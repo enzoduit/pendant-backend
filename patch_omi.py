@@ -157,7 +157,7 @@ old_wal_updated = "  void onWalUpdated() async {\n    await refreshWals();\n  }"
 new_wal_updated = """  void onWalUpdated() async {
     await refreshWals();
     // BYPASS: re-trigger auto-upload when WALs arrive (e.g. after flash drain completes)
-    if (!_syncState.isProcessing && !_isAutoUploading) {
+    if (!_syncState.isProcessing) {
       _scheduleAutoUploadPendingPhoneFiles();
     }
   }"""

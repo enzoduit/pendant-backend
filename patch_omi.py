@@ -146,5 +146,25 @@ if old_auth_check in shared and "BYPASS: no auth required" not in shared:
 else:
     print("shared.dart: skipped (already patched or pattern not found)")
 
-# sync_provider.dart: no patch needed - RecordingTransferCoordinator handles auto-upload in latest omi
-print("sync_provider.dart: no patch needed (RecordingTransferCoordinator handles it)")
+# 7. Patch sync_provider.dart — wake transfer coordinator when WALs arrive from flash drain
+# In new omi, onWalUpdated does NOT wake the coordinator → flash drain WALs never auto-upload
+sync_provider_path = f"{base}/providers/sync_provider.dart"
+with open(sync_provider_path) as f:
+    sp = f.read()
+
+old_wal_updated = "  void onWalUpdated() async {\n    await refreshWals();\n  }"
+new_wal_updated = """  void onWalUpdated() async {
+    await refreshWals();
+    // BYPASS: wake transfer coordinator when new WALs arrive (e.g. after flash drain)
+    if (_startBackgroundSync && !_syncState.isProcessing) {
+      unawaited(_wakeTransfer(WakeTrigger.cooldownElapsed));
+    }
+  }"""
+
+if old_wal_updated in sp and "BYPASS: wake transfer" not in sp:
+    sp = sp.replace(old_wal_updated, new_wal_updated)
+    with open(sync_provider_path, "w") as f:
+        f.write(sp)
+    print("sync_provider.dart patched: onWalUpdated wakes coordinator after flash drain")
+else:
+    print(f"sync_provider.dart: pattern found={old_wal_updated in sp}, already patched={'BYPASS: wake transfer' in sp}")

@@ -158,7 +158,7 @@ old_wal_updated = "  void onWalUpdated() async {\n    await refreshWals();\n  }"
 new_wal_updated = """  void onWalUpdated() async {
     await refreshWals();
     // BYPASS: wake transfer coordinator when new WALs arrive (e.g. after flash drain)
-    if (_startBackgroundSync && !_syncState.isProcessing) {
+    if (_startBackgroundSync) {
       unawaited(_wakeTransfer(WakeTrigger.cooldownElapsed));
     }
   }"""

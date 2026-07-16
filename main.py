@@ -358,40 +358,68 @@ async def sync_local_files(request: Request):
                 whisper_bytes = wav_buf.getvalue()
                 whisper_filename = "audio.wav"
                 print(f"[sync] opuslib decode ok: {len(whisper_bytes)} bytes WAV from {len(frames)} frames")
-                # Truncate to 24MB max (Whisper limit is 25MB)
+                # Split into 24MB chunks if needed (Whisper limit is 25MB)
                 MAX_WHISPER_BYTES = 24 * 1024 * 1024
                 if len(whisper_bytes) > MAX_WHISPER_BYTES:
-                    # Keep header (44 bytes) + truncate audio data
-                    whisper_bytes = whisper_bytes[:44] + whisper_bytes[44:MAX_WHISPER_BYTES]
-                    print(f"[sync] truncated to {len(whisper_bytes)} bytes for Whisper limit")
+                    print(f"[sync] large file {len(whisper_bytes)} bytes, splitting into chunks")
+                    # WAV header is 44 bytes, audio data follows
+                    header = whisper_bytes[:44]
+                    audio_data = whisper_bytes[44:]
+                    chunk_size = MAX_WHISPER_BYTES - 44
+                    chunks = [audio_data[i:i+chunk_size] for i in range(0, len(audio_data), chunk_size)]
+                    print(f"[sync] split into {len(chunks)} chunks")
+                    chunk_transcripts = []
+                    for ci, chunk in enumerate(chunks):
+                        chunk_wav = header + chunk
+                        try:
+                            chunk_resp = requests.post(
+                                "https://api.openai.com/v1/audio/transcriptions",
+                                headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
+                                files={"file": (f"chunk_{ci}.wav", chunk_wav, "audio/wav")},
+                                data={"model": "whisper-1"},
+                                timeout=120,
+                            )
+                            chunk_resp.raise_for_status()
+                            t = chunk_resp.json().get("text", "").strip()
+                            if t:
+                                chunk_transcripts.append(t)
+                            print(f"[sync] chunk {ci}: {t[:50]}")
+                        except Exception as ce:
+                            print(f"[sync] chunk {ci} error: {ce}")
+                    # Replace whisper_bytes with a sentinel to skip the main whisper call
+                    whisper_bytes = b''
+                    transcript = " ".join(chunk_transcripts).strip()
+                    print(f"[sync] combined transcript: {transcript[:100]}")
         except Exception as e:
             print(f"[sync] WAL decode error: {e}, sending raw as ogg")
             whisper_filename = "audio.ogg"
 
-    # Transcribe
-    try:
-        mime = "audio/ogg; codecs=opus"
-        if whisper_filename.endswith(".wav"):
-            mime = "audio/wav"
-        elif whisper_filename.endswith(".mp4") or whisper_filename.endswith(".m4a"):
-            mime = "audio/mp4"
-
-        resp = requests.post(
-            "https://api.openai.com/v1/audio/transcriptions",
-            headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
-            files={"file": (whisper_filename, whisper_bytes, mime)},
-            data={"model": "whisper-1"},
-            timeout=120,
-        )
-        resp.raise_for_status()
-        transcript = resp.json().get("text", "").strip()
-        print(f"[sync] transcript: {transcript[:100]}")
-    except Exception as e:
-        print(f"[sync] Whisper error: {e}")
-        return JSONResponse({
-            "failed_segments": 1, "total_segments": 1,
-            "new_memories": [], "updated_memories": [], "errors": [str(e)]
-        })
+    # Transcribe (skip if already transcribed via chunking)
+    if 'transcript' not in dir():
+        transcript = None
+    if transcript is None:
+        try:
+            mime = "audio/ogg; codecs=opus"
+            if whisper_filename.endswith(".wav"):
+                mime = "audio/wav"
+            elif whisper_filename.endswith(".mp4") or whisper_filename.endswith(".m4a"):
+                mime = "audio/mp4"
+            resp = requests.post(
+                "https://api.openai.com/v1/audio/transcriptions",
+                headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
+                files={"file": (whisper_filename, whisper_bytes, mime)},
+                data={"model": "whisper-1"},
+                timeout=120,
+            )
+            resp.raise_for_status()
+            transcript = resp.json().get("text", "").strip()
+            print(f"[sync] transcript: {transcript[:100]}")
+        except Exception as e:
+            print(f"[sync] Whisper error: {e}")
+            return JSONResponse({
+                "failed_segments": 1, "total_segments": 1,
+                "new_memories": [], "updated_memories": [], "errors": [str(e)]
+            })
 
     if transcript:
         ts = datetime.datetime.utcnow()

@@ -171,65 +171,43 @@ if old_wal_updated in sp and "BYPASS: wake transfer" not in sp:
 else:
     print(f"sync_provider.dart: pattern found={old_wal_updated in sp}, already patched={'BYPASS: wake transfer' in sp}")
 
-# 8. Patch recording_transfer_coordinator.dart — send debug trace to our backend
-# So we can see exactly where the upload gets blocked
+# 8. Patch recording_transfer_coordinator.dart — add print debug for may_upload and drain
 coordinator_path = f"{base}/services/wals/recording_transfer_coordinator.dart"
 with open(coordinator_path) as f:
     coord = f.read()
 
-debug_import = "import 'dart:async';\n"
-debug_util = """import 'dart:async';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'package:omi/env/env.dart';
-
-Future<void> _debugLog(String event, Map<String, dynamic> data) async {
-  try {
-    final url = '${Env.apiBaseUrl}v1/debug/log';
-    await http.post(Uri.parse(url),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'event': event, ...data}));
-  } catch (_) {}
-}
-
-"""
-
-if debug_import in coord and "_debugLog" not in coord:
-    coord = coord.replace(debug_import, debug_util)
-
-    # Patch _runPass to log key decisions
+if "BYPASS_DEBUG" not in coord:
     old_may_upload = "      final mayUpload = trigger == WakeTrigger.userRetry || _autoUploadEnabled();\n      if (!mayUpload) return;"
     new_may_upload = """      final autoEnabled = _autoUploadEnabled();
       final mayUpload = trigger == WakeTrigger.userRetry || autoEnabled;
-      unawaited(_debugLog('may_upload_check', {'trigger': trigger.name, 'autoEnabled': autoEnabled, 'mayUpload': mayUpload}));
-      if (!mayUpload) {
-        unawaited(_debugLog('upload_blocked', {'reason': 'autoUploadEnabled=false'}));
-        return;
-      }"""
+      // ignore: avoid_print
+      print('[COORD] BYPASS_DEBUG may_upload=$mayUpload trigger=${trigger.name} autoEnabled=$autoEnabled');
+      if (!mayUpload) return;"""
+
+    old_drain = "      final result = await _drain();"
+    new_drain = """      // ignore: avoid_print
+      print('[COORD] BYPASS_DEBUG drain starting trigger=${trigger.name}');
+      final result = await _drain();
+      // ignore: avoid_print
+      print('[COORD] BYPASS_DEBUG drain result: attempted=${result.attempted} failed=${result.failed} contended=${result.contended}');"""
 
     if old_may_upload in coord:
         coord = coord.replace(old_may_upload, new_may_upload)
         print("coordinator: may_upload debug patch applied")
     else:
-        print("coordinator: may_upload pattern not found")
-
-    # Patch drain result logging
-    old_drain = "      final result = await _drain();"
-    new_drain = """      unawaited(_debugLog('drain_starting', {'trigger': trigger.name}));
-      final result = await _drain();
-      unawaited(_debugLog('drain_result', {'attempted': result.attempted, 'failed': result.failed, 'contended': result.contended}));"""
+        print("coordinator: may_upload pattern NOT FOUND")
 
     if old_drain in coord:
         coord = coord.replace(old_drain, new_drain)
         print("coordinator: drain debug patch applied")
     else:
-        print("coordinator: drain pattern not found")
+        print("coordinator: drain pattern NOT FOUND")
 
     with open(coordinator_path, "w") as f:
         f.write(coord)
-    print("recording_transfer_coordinator.dart patched with debug logging")
+    print("recording_transfer_coordinator.dart patched")
 else:
-    print(f"coordinator: skipped (already patched={_debugLog in coord})")
+    print("coordinator: already patched")
 
 # 9. Patch sync_upload_gate.dart — log when gate blocks uploads
 gate_path = f"{base}/services/wals/sync_upload_gate.dart"

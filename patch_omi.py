@@ -365,3 +365,20 @@ if old_add_external in lw and "BYPASS: backfill WAL" not in lw:
     print("local_wal_sync.dart patched: backfill WALs now trigger syncAll immediately")
 else:
     print(f"local_wal_sync.dart: pattern found={old_add_external in lw}, already patched={'BYPASS: backfill WAL' in lw}")
+
+# 12. Ensure seedLimitlessDevice is called on every app launch
+# The Consumer bypass returns HomePageWrapper but doesn't call seedLimitlessDevice
+app_path2 = f"{base}/mobile/mobile_app.dart"
+with open(app_path2) as f:
+    app2 = f.read()
+
+old_bypass = "        return const HomePageWrapper(); // BYPASS"
+new_bypass = "        SharedPreferencesUtil().seedLimitlessDevice(); // BYPASS: seed prefs\n        return const HomePageWrapper(); // BYPASS"
+
+if old_bypass in app2 and "seedLimitlessDevice" not in app2:
+    app2 = app2.replace(old_bypass, new_bypass, 1)
+    with open(app_path2, "w") as f:
+        f.write(app2)
+    print("mobile_app.dart: seedLimitlessDevice() call added before HomePageWrapper")
+else:
+    print(f"mobile_app.dart patch 12: found={old_bypass in app2}, already_has_seed={'seedLimitlessDevice' in app2}")

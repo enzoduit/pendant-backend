@@ -428,33 +428,46 @@ if old_select in batch and "BYPASS: also include limitless" not in batch:
 else:
     print(f"batch_recording.dart: found={old_select in batch}, already={' BYPASS: also include limitless' in batch}")
 
-# 14. BYPASS: Auto-upload all pending limitless recordings from conversations_page.dart
-# Trigger: every time the conversations page initializes (covers app start + navigation back)
-# This is identical to tapping "Procesar ahora" on each recording — uses the same upload() path
-conversations_page_path = f"{base}/pages/conversations/conversations_page.dart"
-with open(conversations_page_path) as f:
-    cp = f.read()
+# 14. BYPASS: Auto-upload pending recordings directly in LocalRecordingsProvider.refresh()
+# After refresh() scans the dir and populates _recordings, immediately upload any pending ones.
+# This avoids Widget context issues entirely — runs in the provider itself.
+lrp_path = f"{base}/providers/local_recordings_provider.dart"
+with open(lrp_path) as f:
+    lrp = f.read()
 
-old_refresh = "      // Surface any unsynced batch recordings written by the native layer.\n      context.read<LocalRecordingsProvider>().refresh();"
+old_refresh_end = """      list.sort((a, b) => b.timerStart.compareTo(a.timerStart));
+      _recordings = list;
+      _secondsByFile.removeWhere((k, _) => !seen.contains(k));"""
 
-new_refresh = """      // Surface any unsynced batch recordings written by the native layer.
-      // BYPASS: await refresh() so recordings list is populated, then auto-upload all pending
-      await context.read<LocalRecordingsProvider>().refresh();
-      if (mounted) {
-        final recProvider = context.read<LocalRecordingsProvider>();
-        final pending = List.from(recProvider.recordings);
-        for (final rec in pending) {
-          if (!mounted) break;
-          if (rec.state != LocalRecordingState.uploading) {
-            await recProvider.upload(rec);
-          }
-        }
-      }"""
+new_refresh_end = """      list.sort((a, b) => b.timerStart.compareTo(a.timerStart));
+      _recordings = list;
+      _secondsByFile.removeWhere((k, _) => !seen.contains(k));
+      // BYPASS: auto-upload all pending recordings after scan completes
+      unawaited(_autoUploadAllPending());"""
 
-if old_refresh in cp and "BYPASS: auto-upload all pending" not in cp:
-    cp = cp.replace(old_refresh, new_refresh)
-    with open(conversations_page_path, "w") as f:
-        f.write(cp)
-    print("conversations_page.dart patched: auto-upload all pending on init")
+if old_refresh_end in lrp and "_autoUploadAllPending" not in lrp:
+    lrp = lrp.replace(old_refresh_end, new_refresh_end)
+    # Add the method before the existing _maybeAutoUpload
+    auto_upload_method = """
+  /// BYPASS: upload ALL pending recordings (limitless + phone), not just auto-phone files.
+  Future<void> _autoUploadAllPending() async {
+    if (_disposed) return;
+    final toUpload = List<LocalRecording>.from(_recordings);
+    for (final rec in toUpload) {
+      if (_disposed) break;
+      if (rec.state == LocalRecordingState.uploading) continue;
+      await _uploadFile(rec, auto: true);
+    }
+  }
+
+"""
+    lrp = lrp.replace(
+        "  // ─────────────────────── auto-upload (offline fallback) ───────────────────────",
+        auto_upload_method + "  // ─────────────────────── auto-upload (offline fallback) ───────────────────────",
+        1
+    )
+    with open(lrp_path, "w") as f:
+        f.write(lrp)
+    print("local_recordings_provider.dart patched: auto-upload all pending after refresh()")
 else:
-    print(f"conversations_page.dart: found={old_refresh in cp}, already={'BYPASS: auto-upload all pending' in cp}")
+    print(f"lrp patch: found={old_refresh_end in lrp}, already={'_autoUploadAllPending' in lrp}")

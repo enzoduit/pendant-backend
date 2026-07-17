@@ -256,21 +256,35 @@ async def omi_webhook(request: Request):
         data = await request.json()
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON")
-    transcript = data.get("transcript") or data.get("text") or ""
+
+    print(f"[webhook] received keys: {list(data.keys())}")
+
+    transcript = ""
+
+    # String transcript (simple format)
+    raw = data.get("transcript") or data.get("text") or ""
+    if isinstance(raw, str) and raw.strip():
+        transcript = raw.strip()
+
+    # Omi's actual conversation event format: transcript_segments or segments
     if not transcript:
-        segments = data.get("segments", [])
+        segments = data.get("transcript_segments") or data.get("segments") or []
         if segments:
-            transcript = " ".join(s.get("text", "") for s in segments).strip()
+            transcript = " ".join(s.get("text", "") for s in segments if s.get("text")).strip()
+
     if not transcript:
+        print(f"[webhook] no transcript found in payload: {str(data)[:200]}")
         return JSONResponse({"status": "no_transcript"})
+
     ts = datetime.datetime.utcnow()
     try:
         his_payload = push_to_his(transcript, ts)
         pushed = True
     except Exception as e:
+        print(f"[webhook] HIS push error: {e}")
         his_payload = {}
         pushed = False
-    return JSONResponse({"status": "ok", "transcript": transcript, "pushed": pushed})
+    return JSONResponse({"status": "ok", "transcript": transcript[:200], "pushed": pushed})
 
 
 # ---------------------------------------------------------------------------

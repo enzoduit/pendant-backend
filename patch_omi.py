@@ -427,3 +427,36 @@ if old_select in batch and "BYPASS: also include limitless" not in batch:
     print("batch_recording.dart patched: limitless files now auto-upload")
 else:
     print(f"batch_recording.dart: found={old_select in batch}, already={' BYPASS: also include limitless' in batch}")
+
+# 14. BYPASS: Auto-upload all pending limitless recordings from conversations_page.dart
+# Trigger: every time the conversations page initializes (covers app start + navigation back)
+# This is identical to tapping "Procesar ahora" on each recording — uses the same upload() path
+conversations_page_path = f"{base}/pages/conversations/conversations_page.dart"
+with open(conversations_page_path) as f:
+    cp = f.read()
+
+old_refresh = "      // Surface any unsynced batch recordings written by the native layer.\n      context.read<LocalRecordingsProvider>().refresh();"
+
+new_refresh = """      // Surface any unsynced batch recordings written by the native layer.
+      context.read<LocalRecordingsProvider>().refresh();
+      // BYPASS: auto-upload all pending limitless recordings (same path as manual "Process Now")
+      Future.delayed(const Duration(seconds: 2), () async {
+        if (!mounted) return;
+        final recProvider = context.read<LocalRecordingsProvider>();
+        // refresh() is async internally — give it a moment to populate _recordings
+        final pending = recProvider.recordings.where((r) =>
+          r.state != LocalRecordingState.uploading
+        ).toList();
+        for (final rec in pending) {
+          if (!mounted) return;
+          await recProvider.upload(rec);
+        }
+      });"""
+
+if old_refresh in cp and "BYPASS: auto-upload all pending" not in cp:
+    cp = cp.replace(old_refresh, new_refresh)
+    with open(conversations_page_path, "w") as f:
+        f.write(cp)
+    print("conversations_page.dart patched: auto-upload all pending on init")
+else:
+    print(f"conversations_page.dart: found={old_refresh in cp}, already={'BYPASS: auto-upload all pending' in cp}")

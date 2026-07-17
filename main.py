@@ -10,6 +10,36 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 app = FastAPI(title="Pendant Backend", version="3.0.0")
+# ---------------------------------------------------------------------------
+# Request logging — track all inbound calls
+# ---------------------------------------------------------------------------
+_request_log = []
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    import time
+    start = time.time()
+    response = await call_next(request)
+    elapsed = round((time.time() - start) * 1000)
+    entry = {
+        "ts": datetime.datetime.utcnow().isoformat(),
+        "method": request.method,
+        "path": str(request.url.path),
+        "status": response.status_code,
+        "ms": elapsed,
+        "ua": request.headers.get("user-agent", "")[:60],
+    }
+    _request_log.append(entry)
+    if len(_request_log) > 200:
+        _request_log.pop(0)
+    print(f"[req] {entry['method']} {entry['path']} → {entry['status']} ({elapsed}ms)")
+    return response
+
+@app.get("/v1/debug/requests")
+async def get_request_log():
+    return {"entries": _request_log[-50:]}
+
+
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 HIS_TOKEN = os.environ.get("HIS_TOKEN", "")

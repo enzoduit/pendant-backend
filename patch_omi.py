@@ -325,3 +325,43 @@ if "_rescueOrphanedWals" not in sp:
         f.write(sp)
 else:
     print("sync_provider.dart: rescue already patched")
+
+# 11. Patch local_wal_sync.dart — addExternalWal triggers syncAll for backfill WALs
+# Root cause: WALs without conversationId are classified as "backfill" → syncFreshOnly skipped
+# Fix: explicitly call syncAll(includeBackfill: true) for backfill WALs (same as fresh path)
+local_wal_path = f"{base}/services/wals/local_wal_sync.dart"
+with open(local_wal_path) as f:
+    lw = f.read()
+
+old_add_external = """    if (_syncLaneForWal(wal, DateTime.now().millisecondsSinceEpoch ~/ 1000) == SyncUploadLane.fresh) {
+      try {
+        // Device-storage recovery persists one WAL at a time. Upload each
+        // fresh chunk immediately instead of waiting for the full ring/flash
+        // backlog to finish downloading.
+        await syncFreshOnly();
+      } catch (error) {
+        Logger.debug('LocalWalSync: fresh upload wake failed for ${wal.id}: $error');
+      }
+    }"""
+
+new_add_external = """    final _walLane = _syncLaneForWal(wal, DateTime.now().millisecondsSinceEpoch ~/ 1000);
+    try {
+      if (_walLane == SyncUploadLane.fresh) {
+        // Fresh WAL: upload immediately via fresh-only path
+        await syncFreshOnly();
+      } else {
+        // BYPASS: backfill WAL (no conversationId = no server proof)
+        // Still needs immediate upload — don't wait for Coordinator
+        await syncAll();  // syncAll includes backfill by default
+      }
+    } catch (error) {
+      Logger.debug('LocalWalSync: upload wake failed for ${wal.id} lane=${_walLane.name}: $error');
+    }"""
+
+if old_add_external in lw and "BYPASS: backfill WAL" not in lw:
+    lw = lw.replace(old_add_external, new_add_external)
+    with open(local_wal_path, "w") as f:
+        f.write(lw)
+    print("local_wal_sync.dart patched: backfill WALs now trigger syncAll immediately")
+else:
+    print(f"local_wal_sync.dart: pattern found={old_add_external in lw}, already patched={'BYPASS: backfill WAL' in lw}")

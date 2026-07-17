@@ -2,7 +2,7 @@
 """Patches Omi app source to bypass auth and onboarding for personal use."""
 import re, sys, os
 
-base = "/tmp/omi/app/lib"
+base = "app/lib"
 
 # 1. Patch auth_provider.dart
 auth_path = f"{base}/providers/auth_provider.dart"
@@ -43,8 +43,11 @@ DEVICE_SEED = '''
     saveBool('batchModeEnabled', true);  // BYPASS: Transcribe Later mode for Limitless
     saveBool('unlimitedLocalStorageEnabled', true);  // BYPASS: must be true for flash WALs to be stored locally
     if (getString('btDevice')?.isNotEmpty == true) return;
-    const deviceJson = '{"name":"Pendant","id":"FD:04:D0:EB:84:88","type":"limitless","rssi":-60,"locator":null,"modelNumber":"Limitless Pendant","firmwareRevision":"1.0.0","hardwareRevision":"Unknown","manufacturerName":"Limitless","serialNumber":null}';
-    saveString('btDevice', deviceJson);
+    // Only seed device if not already paired (preserves user's actual paired device)
+    if (getString('btDevice')?.isEmpty != false) {
+      const deviceJson = '{"name":"Pendant","id":"FD:04:D0:EB:84:88","type":"limitless","rssi":-60,"locator":null,"modelNumber":"Limitless Pendant","firmwareRevision":"1.0.0","hardwareRevision":"Unknown","manufacturerName":"Limitless","serialNumber":null}';
+      saveString('btDevice', deviceJson);
+    }
     saveBool('onboardingCompleted', true);
     saveBool('deviceOnboardingCompleted', true);
     saveBool('autoSyncOfflineRecordings', true);  // BYPASS: ensure auto-sync is on
@@ -154,7 +157,9 @@ sync_provider_path = f"{base}/providers/sync_provider.dart"
 with open(sync_provider_path) as f:
     sp = f.read()
 
-old_wal_updated = "  void onWalUpdated() async {\\n    await refreshWals();\\n  }"
+old_wal_updated = """  void onWalUpdated() async {
+    await refreshWals();
+  }"""
 new_wal_updated = """  void onWalUpdated() async {
     await refreshWals();
     // BYPASS: debounced userRetry after flash-drain completes
@@ -237,7 +242,7 @@ if "_debugLog" not in gate and "prepareToUpload" in gate:
     }
     final allowed = !_limiter.isLimitedForLane(lane.name);
     try {
-      final url = Uri.parse('\${_uploader.toString().contains("http") ? "" : ""}');
+      final url = Uri.parse('UNUSED_PLACEHOLDER.contains("http") ? "" : ""}');
       // minimal debug — just print to console since we don't have easy access to apiBaseUrl here
     } catch (_) {}
     return allowed;"""

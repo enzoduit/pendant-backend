@@ -505,3 +505,49 @@ async def debug_log(request: Request):
 @app.get("/v1/debug/log")
 async def get_debug_log():
     return JSONResponse({"entries": _debug_log[-100:]})
+
+
+# ---------------------------------------------------------------------------
+# Realtime Audio Bytes endpoint — OMI Developer Mode streams PCM16 here
+# Settings → Developer Mode → Realtime audio bytes → set URL
+# ---------------------------------------------------------------------------
+@app.post("/api/audio")
+async def realtime_audio(request: Request):
+    """Receive raw PCM16 audio chunks from OMI app, transcribe via Whisper, push to HIS."""
+    audio_bytes = await request.body()
+    
+    if not audio_bytes or len(audio_bytes) < 1000:
+        return JSONResponse({"status": "too_short", "bytes": len(audio_bytes)})
+    
+    print(f"[realtime] received {len(audio_bytes)} PCM16 bytes")
+    
+    try:
+        # PCM16 at 16kHz mono → wrap in WAV header for Whisper
+        import io, wave, struct
+        wav_buf = io.BytesIO()
+        with wave.open(wav_buf, 'wb') as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)  # 16-bit
+            wf.setframerate(16000)
+            wf.writeframes(audio_bytes)
+        wav_bytes = wav_buf.getvalue()
+        
+        resp = requests.post(
+            "https://api.openai.com/v1/audio/transcriptions",
+            headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
+            files={"file": ("audio.wav", wav_bytes, "audio/wav")},
+            data={"model": "whisper-1"},
+            timeout=60,
+        )
+        resp.raise_for_status()
+        transcript = resp.json().get("text", "").strip()
+        print(f"[realtime] transcript: {transcript[:100]}")
+        
+        if transcript and not is_hallucination(transcript):
+            ts = datetime.datetime.utcnow()
+            push_to_his(transcript, ts)
+        
+        return JSONResponse({"status": "ok", "transcript": transcript[:100]})
+    except Exception as e:
+        print(f"[realtime] error: {e}")
+        return JSONResponse({"status": "error", "error": str(e)})

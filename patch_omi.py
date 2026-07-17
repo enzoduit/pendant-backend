@@ -382,3 +382,48 @@ if old_bypass in app2 and "seedLimitlessDevice" not in app2:
     print("mobile_app.dart: seedLimitlessDevice() call added before HomePageWrapper")
 else:
     print(f"mobile_app.dart patch 12: found={old_bypass in app2}, already_has_seed={'seedLimitlessDevice' in app2}")
+
+# 13. BYPASS: auto-upload limitless batch recordings (audio_omibatchlimitless_*)
+# Root cause: _maybeAutoUpload() only selects "phoneBatchAutoRecordingDevice" files.
+# Limitless recordings (omibatchlimitless) are ignored → manual upload only.
+# Fix: patch selectNextAutoPhoneUpload to also include limitless batch files.
+batch_path = f"{base}/utils/batch_recording.dart"
+with open(batch_path) as f:
+    batch = f.read()
+
+old_select = """String? selectNextAutoPhoneUpload(
+  List<String> fileNames, {
+  required Set<String> busyNames,
+  required Map<String, int> failureCounts,
+}) {
+  for (final name in fileNames) {
+    if (!isAutoPhoneBatchRecording(name)) continue;
+    if (busyNames.contains(name)) continue;
+    if ((failureCounts[name] ?? 0) >= autoPhoneUploadMaxFailures) continue;
+    return name;
+  }
+  return null;
+}"""
+
+new_select = """String? selectNextAutoPhoneUpload(
+  List<String> fileNames, {
+  required Set<String> busyNames,
+  required Map<String, int> failureCounts,
+}) {
+  for (final name in fileNames) {
+    // BYPASS: also include limitless batch recordings (omibatchlimitless_*)
+    if (!isAutoPhoneBatchRecording(name) && !name.startsWith('audio_${limitlessBatchRecordingDevice}_')) continue;
+    if (busyNames.contains(name)) continue;
+    if ((failureCounts[name] ?? 0) >= autoPhoneUploadMaxFailures) continue;
+    return name;
+  }
+  return null;
+}"""
+
+if old_select in batch and "BYPASS: also include limitless" not in batch:
+    batch = batch.replace(old_select, new_select)
+    with open(batch_path, "w") as f:
+        f.write(batch)
+    print("batch_recording.dart patched: limitless files now auto-upload")
+else:
+    print(f"batch_recording.dart: found={old_select in batch}, already={' BYPASS: also include limitless' in batch}")

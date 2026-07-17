@@ -154,16 +154,32 @@ sync_provider_path = f"{base}/providers/sync_provider.dart"
 with open(sync_provider_path) as f:
     sp = f.read()
 
-old_wal_updated = "  void onWalUpdated() async {\n    await refreshWals();\n  }"
+old_wal_updated = "  void onWalUpdated() async {\\n    await refreshWals();\\n  }"
 new_wal_updated = """  void onWalUpdated() async {
     await refreshWals();
-    // BYPASS: wake transfer coordinator when new WALs arrive (e.g. after flash drain)
-    if (_startBackgroundSync) {
-      unawaited(_wakeTransfer(WakeTrigger.cooldownElapsed));
-    }
+    // BYPASS: debounced userRetry after flash-drain completes
+    // cooldownElapsed corrupts coordinator state; userRetry bypasses gate safely
+    _walUploadDebounce?.cancel();
+    _walUploadDebounce = Timer(const Duration(seconds: 5), () {
+      _walUploadDebounce = null;
+      if (_startBackgroundSync) {
+        unawaited(_wakeTransfer(WakeTrigger.userRetry));
+      }
+    });
   }"""
 
 if old_wal_updated in sp and "BYPASS: wake transfer" not in sp:
+    # Also add Timer field to SyncProvider class
+    timer_field = "  Timer? _walUploadDebounce; // BYPASS: debounce for flash-drain upload"
+    class_decl = "class SyncProvider extends ChangeNotifier"
+    if class_decl in sp and "_walUploadDebounce" not in sp:
+        # Find first field after class declaration
+        insert_after = "  final AudioPlayerUtils _audioPlayerUtils = AudioPlayerUtils.instance;"
+        if insert_after in sp:
+            sp = sp.replace(insert_after, insert_after + "\n" + timer_field)
+        else:
+            # Fallback: add after class declaration line
+            sp = sp.replace(class_decl + " ", class_decl + " ")  # no-op if not found
     sp = sp.replace(old_wal_updated, new_wal_updated)
     with open(sync_provider_path, "w") as f:
         f.write(sp)

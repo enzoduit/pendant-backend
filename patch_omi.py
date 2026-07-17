@@ -261,3 +261,67 @@ if "_debugLog" not in gate and "prepareToUpload" in gate:
         print("sync_upload_gate.dart patched with gate logging")
     else:
         print("sync_upload_gate.dart: return pattern not found")
+
+# 10. Patch sync_provider.dart — rescue orphaned WALs stuck in "uploaded" state on startup
+# Root cause: Previous sessions uploaded WALs but reconciler never confirmed them
+# → WALs stuck in "uploaded" state forever, excluded from missingWals, never retried
+# Fix: Reset all "uploaded" WALs to "miss" on app start (safe: backend is idempotent)
+sp_rescue_path = f"{base}/providers/sync_provider.dart"
+with open(sp_rescue_path) as f:
+    sp = f.read()
+
+if "_rescueOrphanedWals" not in sp:
+    # Find _initializeProvider or equivalent startup method
+    # In new OMI it's _attachTransferCoordinator which runs on init
+    old_attach = "  Future<void> _attachTransferCoordinator() async {"
+    rescue_code = """
+  /// Resets WALs stuck in [WalStatus.uploaded] back to [WalStatus.miss] so they
+  /// are retried on the next drain. Safe because our backend is idempotent (200 fast-path).
+  Future<void> _rescueOrphanedWals() async {
+    final phone = _walService.getSyncs().phone;
+    final allWals = await phone.getAllWals();
+    final orphans = allWals.where((w) => w.status == WalStatus.uploaded).toList();
+    if (orphans.isEmpty) {
+      // ignore: avoid_print
+      print('[WAL] No orphaned WALs to rescue');
+      return;
+    }
+    // ignore: avoid_print
+    print('[WAL] Rescuing ${orphans.length} orphaned WALs stuck in uploaded state');
+    for (final wal in orphans) {
+      wal.status = WalStatus.miss;
+      wal.jobId = null;
+    }
+    // persistWals doesn't exist - use persistRetryMetadata on any WAL to trigger _saveWalsToFile
+    if (orphans.isNotEmpty) await phone.persistRetryMetadata(orphans.first);
+    await refreshWals();
+    // ignore: avoid_print
+    print('[WAL] Rescued: ${missingWals.length} WALs now in missingWals');
+    if (_startBackgroundSync && missingWals.isNotEmpty) {
+      unawaited(_wakeTransfer(WakeTrigger.userRetry));
+    }
+  }
+
+"""
+    if old_attach in sp:
+        sp = sp.replace(old_attach, rescue_code + old_attach)
+        
+        # Call _rescueOrphanedWals after _attachTransferCoordinator finishes
+        # Find where _startRecovery is called (at end of _attachTransferCoordinator)
+        old_start_recovery = "      unawaited(_startRecovery());"
+        new_start_recovery = """      unawaited(_startRecovery());
+      // BYPASS: rescue WALs stuck in uploaded state from previous sessions
+      unawaited(_rescueOrphanedWals());"""
+        
+        if old_start_recovery in sp:
+            sp = sp.replace(old_start_recovery, new_start_recovery, 1)
+            print("sync_provider.dart: _rescueOrphanedWals added and called on startup")
+        else:
+            print("sync_provider.dart: _startRecovery pattern not found")
+    else:
+        print("sync_provider.dart: _attachTransferCoordinator not found")
+    
+    with open(sp_rescue_path, "w") as f:
+        f.write(sp)
+else:
+    print("sync_provider.dart: rescue already patched")

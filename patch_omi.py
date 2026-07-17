@@ -438,20 +438,18 @@ with open(conversations_page_path) as f:
 old_refresh = "      // Surface any unsynced batch recordings written by the native layer.\n      context.read<LocalRecordingsProvider>().refresh();"
 
 new_refresh = """      // Surface any unsynced batch recordings written by the native layer.
-      context.read<LocalRecordingsProvider>().refresh();
-      // BYPASS: auto-upload all pending limitless recordings (same path as manual "Process Now")
-      Future.delayed(const Duration(seconds: 2), () async {
-        if (!mounted) return;
+      // BYPASS: await refresh() so recordings list is populated, then auto-upload all pending
+      await context.read<LocalRecordingsProvider>().refresh();
+      if (mounted) {
         final recProvider = context.read<LocalRecordingsProvider>();
-        // refresh() is async internally — give it a moment to populate _recordings
-        final pending = recProvider.recordings.where((r) =>
-          r.state != LocalRecordingState.uploading
-        ).toList();
+        final pending = List.from(recProvider.recordings);
         for (final rec in pending) {
-          if (!mounted) return;
-          await recProvider.upload(rec);
+          if (!mounted) break;
+          if (rec.state != LocalRecordingState.uploading) {
+            await recProvider.upload(rec);
+          }
         }
-      });"""
+      }"""
 
 if old_refresh in cp and "BYPASS: auto-upload all pending" not in cp:
     cp = cp.replace(old_refresh, new_refresh)

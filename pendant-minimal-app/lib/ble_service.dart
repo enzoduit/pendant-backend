@@ -23,16 +23,18 @@ class BleService {
   AudioWriter? _audioWriter;
   int _packetCount = 0;
 
-  final StreamController<BleState> stateStream = StreamController.broadcast();
-  final StreamController<String> logStream = StreamController.broadcast();
+  final StreamController<BleState> _stateController = StreamController.broadcast();
+  final StreamController<String> _logController = StreamController.broadcast();
+  Stream<BleState> get stateStream => _stateController.stream;
+  Stream<String> get logStream => _logController.stream;
 
   void _setState(BleState s) {
     state = s;
-    stateStream.add(s);
+    _stateController.add(s);
   }
 
   void _log(String msg) {
-    logStream.add(msg);
+    _logController.add(msg);
   }
 
   Future<void> startAutoConnect() async {

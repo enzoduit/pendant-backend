@@ -450,13 +450,19 @@ if old_refresh_end in lrp and "_autoUploadAllPending" not in lrp:
     # Add the method before the existing _maybeAutoUpload
     auto_upload_method = """
   /// BYPASS: upload ALL pending recordings (limitless + phone), not just auto-phone files.
+  bool _isAutoUploadingAll = false; // re-entrancy guard
   Future<void> _autoUploadAllPending() async {
-    if (_disposed) return;
-    final toUpload = List<LocalRecording>.from(_recordings);
-    for (final rec in toUpload) {
-      if (_disposed) break;
-      if (rec.state == LocalRecordingState.uploading) continue;
-      await _uploadFile(rec, auto: true);
+    if (_disposed || _isAutoUploadingAll) return;
+    _isAutoUploadingAll = true;
+    try {
+      final toUpload = List<LocalRecording>.from(_recordings);
+      for (final rec in toUpload) {
+        if (_disposed) break;
+        if (rec.state == LocalRecordingState.uploading) continue;
+        await _uploadFile(rec, auto: true);
+      }
+    } finally {
+      _isAutoUploadingAll = false;
     }
   }
 

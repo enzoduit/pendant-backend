@@ -68,41 +68,51 @@ if target in prefs and "seedLimitlessDevice" not in prefs:
 else:
     print("preferences.dart: skipped (already patched or target not found)")
 
-# 3. Patch mobile_app.dart - replace entire Consumer/auth routing with direct HomePageWrapper
+# 3. Patch mobile_app.dart - exact string replacement (verified against current omi source)
 app_path = f"{base}/mobile/mobile_app.dart"
 with open(app_path) as f:
     app = f.read()
 
-# Strategy: replace the entire build() method body using regex (robust to comment changes)
-# Match from the Consumer<AuthenticationProvider> to the closing brace of the else block
-bypass_build = """  @override
-  Widget build(BuildContext context) {
-    // BYPASS: skip Firebase auth entirely, go straight to home
-    SharedPreferencesUtil().seedLimitlessDevice();
-    return const HomePageWrapper();
-  }
-}"""
+old_build_body = """    return Consumer<AuthenticationProvider>(
+      builder: (context, authProvider, child) {
+        if (authProvider.requiresReauthentication) {
+          _presentSessionExpiration(authProvider.sessionExpirationGeneration);
+          return const OnboardingWrapper(forceAuthPage: true);
+        }
+        if (authProvider.isSignedIn()) {
+          // Returning users who haven't yet given consent under the new
+          // model must see the consent screen before any AI processing
+          // begins, even if the server says they completed onboarding
+          // previously. OnboardingWrapper renders the consent step in
+          // that case and routes them straight to home after Continue.
+          if (!SharedPreferencesUtil().aiConsentGiven) {
+            return const OnboardingWrapper();
+          }
+          if (SharedPreferencesUtil().onboardingCompleted) {
+            if (!SharedPreferencesUtil().permissionsCompleted) {
+              return const _PermissionsGate();
+            }
+            return const HomePageWrapper();
+          } else {
+            return const OnboardingWrapper();
+          }
+        } else {
+          return const DeviceSelectionPage();
+        }
+      },
+    );"""
 
-# Find the class that contains the routing Consumer and replace its build method
-# Target the pattern: @override\n  Widget build ... Consumer<AuthenticationProvider> ... DeviceSelectionPage
-pattern = r'(@override\s+Widget build\(BuildContext context\)\s*\{.*?Consumer<AuthenticationProvider>.*?DeviceSelectionPage\(\);\s*\}\s*\}\s*\}\s*\})'
-match = re.search(pattern, app, re.DOTALL)
-if match:
-    app = app[:match.start()] + bypass_build + app[match.end():]
+new_build_body = """    // BYPASS: skip auth entirely — go straight to home
+    SharedPreferencesUtil().seedLimitlessDevice();
+    return const HomePageWrapper();"""
+
+if old_build_body in app:
+    app = app.replace(old_build_body, new_build_body, 1)
     with open(app_path, "w") as f:
         f.write(app)
-    print("mobile_app.dart patched - Consumer replaced with direct HomePageWrapper")
+    print("mobile_app.dart patched - exact string replacement succeeded")
 else:
-    # Fallback: just patch the isSignedIn check
-    print("WARNING: regex pattern not found, trying simpler patch")
-    app = re.sub(
-        r'if \(authProvider\.isSignedIn\(\)\) \{.*?return const DeviceSelectionPage\(\);\s*\}',
-        'return const HomePageWrapper(); // BYPASS',
-        app, flags=re.DOTALL, count=1
-    )
-    with open(app_path, "w") as f:
-        f.write(app)
-    print("mobile_app.dart patched via fallback regex")
+    print("WARNING: mobile_app.dart exact match failed - app may not start correctly")
 
 print("All patches done!")
 
@@ -366,22 +376,7 @@ if old_add_external in lw and "BYPASS: backfill WAL" not in lw:
 else:
     print(f"local_wal_sync.dart: pattern found={old_add_external in lw}, already patched={'BYPASS: backfill WAL' in lw}")
 
-# 12. Ensure seedLimitlessDevice is called on every app launch
-# The Consumer bypass returns HomePageWrapper but doesn't call seedLimitlessDevice
-app_path2 = f"{base}/mobile/mobile_app.dart"
-with open(app_path2) as f:
-    app2 = f.read()
-
-old_bypass = "        return const HomePageWrapper(); // BYPASS"
-new_bypass = "        SharedPreferencesUtil().seedLimitlessDevice(); // BYPASS: seed prefs\n        return const HomePageWrapper(); // BYPASS"
-
-if old_bypass in app2 and "seedLimitlessDevice" not in app2:
-    app2 = app2.replace(old_bypass, new_bypass, 1)
-    with open(app_path2, "w") as f:
-        f.write(app2)
-    print("mobile_app.dart: seedLimitlessDevice() call added before HomePageWrapper")
-else:
-    print(f"mobile_app.dart patch 12: found={old_bypass in app2}, already_has_seed={'seedLimitlessDevice' in app2}")
+# 12. (removed - seedLimitlessDevice now in patch 3)
 
 # 13. BYPASS: auto-upload limitless batch recordings (audio_omibatchlimitless_*)
 # Root cause: _maybeAutoUpload() only selects "phoneBatchAutoRecordingDevice" files.

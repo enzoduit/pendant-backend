@@ -487,6 +487,12 @@ async def sync_job_status(job_id: str):
         "new_memories": [], "updated_memories": [], "errors": []
     }})
 
+
+@app.get("/v1/fair-use/status")
+async def fair_use_status():
+    # Must return stage=none so SyncUploadGate allows uploads
+    return JSONResponse({"stage": "none", "status": "ok"})
+
 # ---------------------------------------------------------------------------
 # Catch-all for all other Omi endpoints
 # ---------------------------------------------------------------------------

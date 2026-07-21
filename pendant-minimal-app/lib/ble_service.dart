@@ -11,10 +11,10 @@ const Duration kSilenceTimeout = Duration(minutes: 5);
 const String kAudioServiceUuid = '19b10000-e8f2-537e-4f6c-d104768a1214';
 const String kAudioCharUuid    = '19b10001-e8f2-537e-4f6c-d104768a1214';
 
-enum BleState { idle, scanning, connecting, connected, disconnected }
+enum DeviceState { idle, scanning, connecting, connected, disconnected }
 
 class BleService {
-  BleState state = BleState.idle;
+  DeviceState state = DeviceState.idle;
   BluetoothDevice? _device;
   StreamSubscription? _scanSub;
   StreamSubscription? _dataSub;
@@ -23,12 +23,12 @@ class BleService {
   AudioWriter? _audioWriter;
   int _packetCount = 0;
 
-  final StreamController<BleState> _stateController = StreamController.broadcast();
+  final StreamController<DeviceState> _stateController = StreamController.broadcast();
   final StreamController<String> _logController = StreamController.broadcast();
-  Stream<BleState> get stateStream => _stateController.stream;
+  Stream<DeviceState> get stateStream => _stateController.stream;
   Stream<String> get logStream => _logController.stream;
 
-  void _setState(BleState s) {
+  void _setState(DeviceState s) {
     state = s;
     _stateController.add(s);
   }
@@ -43,8 +43,8 @@ class BleService {
   }
 
   Future<void> _startScan() async {
-    if (state == BleState.scanning || state == BleState.connecting || state == BleState.connected) return;
-    _setState(BleState.scanning);
+    if (state == DeviceState.scanning || state == DeviceState.connecting || state == DeviceState.connected) return;
+    _setState(DeviceState.scanning);
     _log('Scanning for Pendant...');
 
     await FlutterBluePlus.stopScan();
@@ -70,7 +70,7 @@ class BleService {
 
     // Retry scan if not found
     Future.delayed(const Duration(seconds: 32), () {
-      if (state == BleState.scanning || state == BleState.idle) {
+      if (state == DeviceState.scanning || state == DeviceState.idle) {
         _log('Retry scan...');
         _startScan();
       }
@@ -78,20 +78,20 @@ class BleService {
   }
 
   Future<void> _connect(BluetoothDevice device) async {
-    _setState(BleState.connecting);
+    _setState(DeviceState.connecting);
     _log('Connecting to ${device.platformName}...');
     _device = device;
 
     try {
       await device.connect(timeout: const Duration(seconds: 20), autoConnect: false);
-      _setState(BleState.connected);
+      _setState(DeviceState.connected);
       _log('Connected!');
 
       _stateSub?.cancel();
       _stateSub = device.connectionState.listen((cs) {
         if (cs == BluetoothConnectionState.disconnected) {
           _log('Disconnected. Retrying...');
-          _setState(BleState.disconnected);
+          _setState(DeviceState.disconnected);
           _cleanupSession();
           Future.delayed(const Duration(seconds: 5), _startScan);
         }
@@ -100,7 +100,7 @@ class BleService {
       await _discoverAndSubscribe(device);
     } catch (e) {
       _log('Connect error: $e');
-      _setState(BleState.disconnected);
+      _setState(DeviceState.disconnected);
       Future.delayed(const Duration(seconds: 5), _startScan);
     }
   }
@@ -204,6 +204,6 @@ class BleService {
     _cleanupSession();
     _scanSub?.cancel();
     _stateSub?.cancel();
-    _setState(BleState.idle);
+    _setState(DeviceState.idle);
   }
 }

@@ -11,7 +11,7 @@ class StatusScreen extends StatefulWidget {
 }
 
 class _StatusScreenState extends State<StatusScreen> {
-  BleState _bleState = BleState.idle;
+  DeviceState _bleState = DeviceState.idle;
   final List<String> _logs = [];
   StreamSubscription? _stateSub;
   StreamSubscription? _logSub;
@@ -77,21 +77,21 @@ class _StatusScreenState extends State<StatusScreen> {
 
   String get _statusText {
     switch (_bleState) {
-      case BleState.idle:        return 'Idle';
-      case BleState.scanning:    return 'Scanning...';
-      case BleState.connecting:  return 'Connecting...';
-      case BleState.connected:   return 'Connected';
-      case BleState.disconnected:return 'Disconnected';
+      case DeviceState.idle:        return 'Idle';
+      case DeviceState.scanning:    return 'Scanning...';
+      case DeviceState.connecting:  return 'Connecting...';
+      case DeviceState.connected:   return 'Connected';
+      case DeviceState.disconnected:return 'Disconnected';
     }
   }
 
   Color get _statusColor {
     switch (_bleState) {
-      case BleState.connected:   return Colors.greenAccent;
-      case BleState.scanning:
-      case BleState.connecting:  return Colors.amberAccent;
-      case BleState.disconnected:
-      case BleState.idle:        return Colors.redAccent;
+      case DeviceState.connected:   return Colors.greenAccent;
+      case DeviceState.scanning:
+      case DeviceState.connecting:  return Colors.amberAccent;
+      case DeviceState.disconnected:
+      case DeviceState.idle:        return Colors.redAccent;
     }
   }
 

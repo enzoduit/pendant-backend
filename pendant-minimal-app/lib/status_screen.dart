@@ -30,11 +30,11 @@ class _StatusScreenState extends State<StatusScreen> {
     _addLog(ok ? 'Permissions granted' : 'Some permissions denied');
 
     // Listen to BLE state
-    _stateSub = bleService.stateStream.listen((s) {
+    _stateSub = bleService.stateStream.stream.listen((s) {
       setState(() => _bleState = s);
     });
 
-    _logSub = bleService.logStream.listen(_addLog);
+    _logSub = bleService.logStream.stream.listen(_addLog);
 
     // Wire up file-ready callback
     bleService.onFileReady = (path) async {

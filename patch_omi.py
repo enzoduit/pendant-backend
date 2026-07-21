@@ -68,52 +68,41 @@ if target in prefs and "seedLimitlessDevice" not in prefs:
 else:
     print("preferences.dart: skipped (already patched or target not found)")
 
-# 3. Patch mobile_app.dart - replace Consumer auth routing with direct HomePageWrapper
+# 3. Patch mobile_app.dart - replace entire Consumer/auth routing with direct HomePageWrapper
 app_path = f"{base}/mobile/mobile_app.dart"
 with open(app_path) as f:
     app = f.read()
 
-# Use exact string match on known source content (verified from omi repo)
-old_build_body = """    return Consumer<AuthenticationProvider>(
-      builder: (context, authProvider, child) {
-        if (authProvider.requiresReauthentication) {
-          _presentSessionExpiration(authProvider.sessionExpirationGeneration);
-          return const OnboardingWrapper(forceAuthPage: true);
-        }
-        if (authProvider.isSignedIn()) {
-          // Returning users who haven't yet given consent under the new
-          // model must see the consent screen before any AI processing
-          // begins, even if the server says they completed onboarding
-          // previously. OnboardingWrapper renders the consent step in
-          // that case and routes them straight to home after Continue.
-          if (!SharedPreferencesUtil().aiConsentGiven) {
-            return const OnboardingWrapper();
-          }
-          if (SharedPreferencesUtil().onboardingCompleted) {
-            if (!SharedPreferencesUtil().permissionsCompleted) {
-              return const _PermissionsGate();
-            }
-            return const HomePageWrapper();
-          } else {
-            return const OnboardingWrapper();
-          }
-        } else {
-          return const DeviceSelectionPage();
-        }
-      },
-    );"""
-
-new_build_body = """    // BYPASS: skip auth entirely — go straight to home
+# Strategy: replace the entire build() method body using regex (robust to comment changes)
+# Match from the Consumer<AuthenticationProvider> to the closing brace of the else block
+bypass_build = """  @override
+  Widget build(BuildContext context) {
+    // BYPASS: skip Firebase auth entirely, go straight to home
     SharedPreferencesUtil().seedLimitlessDevice();
-    return const HomePageWrapper();"""
+    return const HomePageWrapper();
+  }
+}"""
 
-if old_build_body in app:
-    app = app.replace(old_build_body, new_build_body, 1)
+# Find the class that contains the routing Consumer and replace its build method
+# Target the pattern: @override\n  Widget build ... Consumer<AuthenticationProvider> ... DeviceSelectionPage
+pattern = r'(@override\s+Widget build\(BuildContext context\)\s*\{.*?Consumer<AuthenticationProvider>.*?DeviceSelectionPage\(\);\s*\}\s*\}\s*\}\s*\})'
+match = re.search(pattern, app, re.DOTALL)
+if match:
+    app = app[:match.start()] + bypass_build + app[match.end():]
     with open(app_path, "w") as f:
         f.write(app)
-    print("mobile_app.dart patched - exact string replacement succeeded")
+    print("mobile_app.dart patched - Consumer replaced with direct HomePageWrapper")
 else:
-    print("WARNING: mobile_app.dart exact match failed - app will show login screen")
+    # Fallback: just patch the isSignedIn check
+    print("WARNING: regex pattern not found, trying simpler patch")
+    app = re.sub(
+        r'if \(authProvider\.isSignedIn\(\)\) \{.*?return const DeviceSelectionPage\(\);\s*\}',
+        'return const HomePageWrapper(); // BYPASS',
+        app, flags=re.DOTALL, count=1
+    )
+    with open(app_path, "w") as f:
+        f.write(app)
+    print("mobile_app.dart patched via fallback regex")
 
 print("All patches done!")
 

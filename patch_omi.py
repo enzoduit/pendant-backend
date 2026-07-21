@@ -427,3 +427,25 @@ if old_select in batch and "BYPASS: also include limitless" not in batch:
     print("batch_recording.dart patched: limitless files now auto-upload")
 else:
     print(f"batch_recording.dart: found={old_select in batch}, already={' BYPASS: also include limitless' in batch}")
+
+# 14. BYPASS: seed prefs in LocalRecordingsProvider constructor
+# TIMING FIX: _maybeAutoUpload() reads autoSyncOfflineRecordings at constructor time.
+# seedLimitlessDevice() was called in build() = too late. SharedPreferences IS initialized
+# before MultiProvider creates LocalRecordingsProvider, so seeding here is safe.
+lrp_path = f"{base}/providers/local_recordings_provider.dart"
+with open(lrp_path) as f:
+    lrp = f.read()
+
+old_ctor = "  LocalRecordingsProvider() {\n    _audio.addListener(_onAudioChanged);"
+new_ctor = ("  LocalRecordingsProvider() {\n"
+            "    // BYPASS: seed prefs before _maybeAutoUpload reads them\n"
+            "    SharedPreferencesUtil().seedLimitlessDevice();\n"
+            "    _audio.addListener(_onAudioChanged);")
+
+if old_ctor in lrp and "BYPASS: seed prefs before" not in lrp:
+    lrp = lrp.replace(old_ctor, new_ctor, 1)
+    with open(lrp_path, "w") as f:
+        f.write(lrp)
+    print("local_recordings_provider.dart patched: seedLimitlessDevice in constructor")
+else:
+    print(f"lrp constructor: found={old_ctor in lrp}, already={'BYPASS: seed prefs' in lrp}")

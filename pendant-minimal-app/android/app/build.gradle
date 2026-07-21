@@ -6,8 +6,8 @@ plugins {
 
 android {
     namespace "com.example.pendant_minimal"
-    compileSdk 34
-    ndkVersion "25.1.8937393"
+    compileSdk flutter.compileSdkVersion
+    ndkVersion flutter.ndkVersion
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
@@ -21,14 +21,17 @@ android {
     defaultConfig {
         applicationId "com.example.pendant_minimal"
         minSdk 21
-        targetSdk 34
+        targetSdk flutter.targetSdkVersion
         versionCode 1
         versionName "1.0"
+        multiDexEnabled true
     }
 
     buildTypes {
         release {
             signingConfig signingConfigs.debug
+            minifyEnabled false
+            shrinkResources false
         }
     }
 }

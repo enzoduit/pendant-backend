@@ -163,6 +163,7 @@ class BleService {
     if (data.isEmpty) return;
     _packetCount++;
     _audioWriter?.write(Uint8List.fromList(data));
+    onBytesReceived?.call(data.length);
     _resetSilenceTimer();
   }
 
@@ -199,6 +200,7 @@ class BleService {
 
   // Callback when a file is complete
   void Function(String path)? onFileReady;
+  void Function(int bytes)? onBytesReceived;
 
   Future<void> disconnect() async {
     await _device?.disconnect();

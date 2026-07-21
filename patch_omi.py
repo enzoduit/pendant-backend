@@ -442,24 +442,27 @@ old_refresh_end = """      list.sort((a, b) => b.timerStart.compareTo(a.timerSta
 new_refresh_end = """      list.sort((a, b) => b.timerStart.compareTo(a.timerStart));
       _recordings = list;
       _secondsByFile.removeWhere((k, _) => !seen.contains(k));
-      // BYPASS: auto-upload all pending recordings after scan completes
-      unawaited(_autoUploadAllPending());"""
+      // BYPASS: auto-upload all pending recordings after scan completes (only if not already uploading)
+      if (!_isUploading && !_isAutoUploadingAll) unawaited(_autoUploadAllPending());"""
 
 if old_refresh_end in lrp and "_autoUploadAllPending" not in lrp:
     lrp = lrp.replace(old_refresh_end, new_refresh_end)
     # Add the method before the existing _maybeAutoUpload
     auto_upload_method = """
   /// BYPASS: upload ALL pending recordings (limitless + phone), not just auto-phone files.
-  bool _isAutoUploadingAll = false; // re-entrancy guard
+  bool _isAutoUploadingAll = false; // re-entrancy guard (class-level field)
   Future<void> _autoUploadAllPending() async {
     if (_disposed || _isAutoUploadingAll) return;
     _isAutoUploadingAll = true;
     try {
+      // Snapshot the list to avoid mutation during iteration
       final toUpload = List<LocalRecording>.from(_recordings);
       for (final rec in toUpload) {
         if (_disposed) break;
         if (rec.state == LocalRecordingState.uploading) continue;
-        await _uploadFile(rec, auto: true);
+        // Call upload() not _uploadFile() — upload() is the public method the button uses
+        // and it does NOT call refresh() internally at the start
+        await upload(rec);
       }
     } finally {
       _isAutoUploadingAll = false;

@@ -5,7 +5,9 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'pendant-minimal-app/**'
+      - 'pendant-minimal-app/lib/**'
+      - 'pendant-minimal-app/pubspec.yaml'
+      - '.github/workflows/build-minimal-apk.yml'
 
 jobs:
   build:
@@ -24,17 +26,76 @@ jobs:
           flutter-version: '3.32.x'
           channel: stable
 
+      - name: Create fresh Flutter project
+        run: |
+          flutter create --org com.enzoduit --project-name pendant_minimal /tmp/pendant_build
+          echo "✅ Flutter project created"
+
+      - name: Copy our Dart files
+        run: |
+          cp pendant-minimal-app/lib/*.dart /tmp/pendant_build/lib/
+          cp pendant-minimal-app/pubspec.yaml /tmp/pendant_build/pubspec.yaml
+          echo "✅ Dart files copied"
+
+      - name: Add Android permissions
+        run: |
+          cat > /tmp/pendant_build/android/app/src/main/AndroidManifest.xml << 'MANIFEST'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.BLUETOOTH"/>
+              <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"/>
+              <uses-permission android:name="android.permission.BLUETOOTH_SCAN"/>
+              <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+              <uses-permission android:name="android.permission.INTERNET"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+              <application
+                  android:label="Pendant"
+                  android:name="${applicationName}"
+                  android:icon="@mipmap/ic_launcher">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:launchMode="singleTop"
+                      android:taskAffinity=""
+                      android:theme="@style/LaunchTheme"
+                      android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+                      android:hardwareAccelerated="true"
+                      android:windowSoftInputMode="adjustResize">
+                      <meta-data
+                        android:name="io.flutter.embedding.android.NormalTheme"
+                        android:resource="@style/NormalTheme"/>
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+                  </activity>
+                  <meta-data
+                      android:name="flutterEmbedding"
+                      android:value="2" />
+              </application>
+              <queries>
+                  <intent>
+                      <action android:name="android.intent.action.PROCESS_TEXT"/>
+                      <data android:mimeType="text/plain"/>
+                  </intent>
+              </queries>
+          </manifest>
+          MANIFEST
+          echo "✅ AndroidManifest updated"
+
       - name: Flutter pub get
-        working-directory: pendant-minimal-app
+        working-directory: /tmp/pendant_build
         run: flutter pub get
 
       - name: Build APK
-        working-directory: pendant-minimal-app
-        run: flutter build apk --debug --no-tree-shake-icons
+        working-directory: /tmp/pendant_build
+        run: flutter build apk --debug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: pendant-minimal-debug
-          path: pendant-minimal-app/build/app/outputs/flutter-apk/app-debug.apk
+          path: /tmp/pendant_build/build/app/outputs/flutter-apk/app-debug.apk
           retention-days: 30

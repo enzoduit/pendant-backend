@@ -1,0 +1,40 @@
+name: Build Pendant Minimal APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'pendant-minimal-app/**'
+
+jobs:
+  build:
+    name: Build Minimal Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.32.x'
+          channel: stable
+
+      - name: Flutter pub get
+        working-directory: pendant-minimal-app
+        run: flutter pub get
+
+      - name: Build APK
+        working-directory: pendant-minimal-app
+        run: flutter build apk --debug --no-tree-shake-icons
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: pendant-minimal-debug
+          path: pendant-minimal-app/build/app/outputs/flutter-apk/app-debug.apk
+          retention-days: 30

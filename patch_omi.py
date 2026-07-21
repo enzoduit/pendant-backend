@@ -442,7 +442,7 @@ else:
 # 15. BYPASS: Call seedLimitlessDevice() in main.dart right after SharedPreferencesUtil.init()
 # CRITICAL TIMING FIX: LocalRecordingsProvider._maybeAutoUpload() reads SharedPreferences
 # at startup. seedLimitlessDevice() must run BEFORE runApp() not inside build()
-main_path = f"{base}/../main.dart"
+main_path = f"{base}/main.dart"
 with open(main_path) as f:
     main_dart = f.read()
 

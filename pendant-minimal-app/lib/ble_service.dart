@@ -8,8 +8,10 @@ const Duration kSilenceTimeout = Duration(minutes: 5);
 
 // Known Limitless Pendant audio service/characteristic UUIDs
 // The pendant typically uses a custom audio characteristic
-const String kAudioServiceUuid = '19b10000-e8f2-537e-4f6c-d104768a1214';
-const String kAudioCharUuid    = '19b10001-e8f2-537e-4f6c-d104768a1214';
+// Limitless Pendant BLE UUIDs (verified from Omi source)
+const String kAudioServiceUuid = '632de001-604c-446b-a80f-7963e950f3fb';
+const String kAudioCharUuid    = '632de003-604c-446b-a80f-7963e950f3fb';
+const String kTxCharUuid       = '632de002-604c-446b-a80f-7963e950f3fb';
 
 enum DeviceState { idle, scanning, connecting, connected, disconnected }
 
@@ -120,8 +122,7 @@ class BleService {
 
         // Match known audio char or any notify/indicate characteristic with large data
         if (cUuid == kAudioCharUuid.toLowerCase() ||
-            sUuid == kAudioServiceUuid.toLowerCase() ||
-            (char.properties.notify && cUuid.contains('19b1'))) {
+            (sUuid == kAudioServiceUuid.toLowerCase() && char.properties.notify)) {
           audioChar = char;
         }
       }

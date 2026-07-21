@@ -6,8 +6,8 @@ plugins {
 
 android {
     namespace "com.example.pendant_minimal"
-    compileSdk flutter.compileSdkVersion
-    ndkVersion flutter.ndkVersion
+    compileSdk 34
+    ndkVersion "25.1.8937393"
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
@@ -15,27 +15,24 @@ android {
     }
 
     kotlinOptions {
-        jvmTarget = "1.8"
+        jvmTarget = '1.8'
     }
 
     defaultConfig {
         applicationId "com.example.pendant_minimal"
-        minSdk 21
-        targetSdk flutter.targetSdkVersion
+        minSdk 23
+        targetSdk 34
         versionCode 1
-        versionName "1.0"
-        multiDexEnabled true
+        versionName "1.0.0"
     }
 
     buildTypes {
         release {
             signingConfig signingConfigs.debug
-            minifyEnabled false
-            shrinkResources false
         }
     }
 }
 
 flutter {
-    source "../.."
+    source '../..'
 }

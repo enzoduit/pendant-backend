@@ -438,3 +438,25 @@ if old_select in batch and "BYPASS: also include limitless" not in batch:
     print("batch_recording.dart patched: limitless files now auto-upload")
 else:
     print(f"batch_recording.dart: found={old_select in batch}, already={' BYPASS: also include limitless' in batch}")
+
+# 15. BYPASS: Call seedLimitlessDevice() in main.dart right after SharedPreferencesUtil.init()
+# CRITICAL TIMING FIX: LocalRecordingsProvider._maybeAutoUpload() reads SharedPreferences
+# at startup. seedLimitlessDevice() must run BEFORE runApp() not inside build()
+main_path = f"{base}/../main.dart"
+with open(main_path) as f:
+    main_dart = f.read()
+
+old_prefs_init = "  await SharedPreferencesUtil.init();"
+new_prefs_init = (
+    "  await SharedPreferencesUtil.init();\n"
+    "  // BYPASS: seed Limitless Pendant prefs before providers/runApp\n"
+    "  SharedPreferencesUtil().seedLimitlessDevice();"
+)
+
+if old_prefs_init in main_dart and "BYPASS: seed Limitless" not in main_dart:
+    main_dart = main_dart.replace(old_prefs_init, new_prefs_init, 1)
+    with open(main_path, "w") as f:
+        f.write(main_dart)
+    print("main.dart patched: seedLimitlessDevice called before runApp()")
+else:
+    print(f"main.dart: found={old_prefs_init in main_dart}, already={'BYPASS: seed Limitless' in main_dart}")

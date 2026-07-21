@@ -441,9 +441,7 @@ old_refresh_end = """      list.sort((a, b) => b.timerStart.compareTo(a.timerSta
 
 new_refresh_end = """      list.sort((a, b) => b.timerStart.compareTo(a.timerStart));
       _recordings = list;
-      _secondsByFile.removeWhere((k, _) => !seen.contains(k));
-      // BYPASS: auto-upload all pending recordings after scan completes (only if not already uploading)
-      if (!_isUploading && !_isAutoUploadingAll) unawaited(_autoUploadAllPending());"""
+      _secondsByFile.removeWhere((k, _) => !seen.contains(k));"""
 
 if old_refresh_end in lrp and "_autoUploadAllPending" not in lrp:
     lrp = lrp.replace(old_refresh_end, new_refresh_end)
@@ -452,17 +450,18 @@ if old_refresh_end in lrp and "_autoUploadAllPending" not in lrp:
   /// BYPASS: upload ALL pending recordings (limitless + phone), not just auto-phone files.
   bool _isAutoUploadingAll = false; // re-entrancy guard (class-level field)
   Future<void> _autoUploadAllPending() async {
-    if (_disposed || _isAutoUploadingAll) return;
+    if (_disposed || _isAutoUploadingAll || _isUploading) return;
     _isAutoUploadingAll = true;
     try {
-      // Snapshot the list to avoid mutation during iteration
+      // Snapshot to avoid mutation during async iteration
       final toUpload = List<LocalRecording>.from(_recordings);
       for (final rec in toUpload) {
-        if (_disposed) break;
+        if (_disposed || _isUploading) break;
         if (rec.state == LocalRecordingState.uploading) continue;
-        // Call upload() not _uploadFile() — upload() is the public method the button uses
-        // and it does NOT call refresh() internally at the start
-        await upload(rec);
+        // Use _uploadFile directly with auto=true — same as manual button but silent
+        // NOTE: _uploadFile calls refresh() internally — that's OK because
+        // _isAutoUploadingAll=true means refresh() won't re-trigger us
+        await _uploadFile(rec, auto: true);
       }
     } finally {
       _isAutoUploadingAll = false;
@@ -480,3 +479,23 @@ if old_refresh_end in lrp and "_autoUploadAllPending" not in lrp:
     print("local_recordings_provider.dart patched: auto-upload all pending after refresh()")
 else:
     print(f"lrp patch: found={old_refresh_end in lrp}, already={'_autoUploadAllPending' in lrp}")
+
+# 14b. Trigger _autoUploadAllPending from constructor (3s delay, one-shot)
+lrp_path2 = f"{base}/providers/local_recordings_provider.dart"
+with open(lrp_path2) as f:
+    lrp2 = f.read()
+
+old_ctor = "    refresh().then((_) => _maybeAutoUpload());"
+new_ctor = """    refresh().then((_) => _maybeAutoUpload());
+    // BYPASS: one-shot auto-upload of ALL pending recordings 3s after startup
+    Future.delayed(const Duration(seconds: 3), () {
+      if (!_disposed) _autoUploadAllPending();
+    });"""
+
+if old_ctor in lrp2 and "_autoUploadAllPending" not in lrp2.split(old_ctor)[0][-200:]:
+    lrp2 = lrp2.replace(old_ctor, new_ctor, 1)
+    with open(lrp_path2, "w") as f:
+        f.write(lrp2)
+    print("local_recordings_provider.dart: constructor trigger added")
+else:
+    print(f"constructor: found={old_ctor in lrp2}")

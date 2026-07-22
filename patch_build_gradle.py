@@ -1,17 +1,17 @@
 """
-Patch build.gradle: remove Codemagic signing logic that crashes when CM_KEYSTORE_PATH is null.
-Replace the if(CI)/else block with just the debug signing fallback (no-op for debug builds).
+Minimal build.gradle fix for GitHub Actions:
+- Only remove the CI-specific Codemagic block that crashes with null CM_KEYSTORE_PATH
+- Keep signingConfigs structure intact but use the else branch (local keystore) 
+- For debug builds, no signing config needed at all
 """
-import re
 
 path = '/tmp/omi/app/android/app/build.gradle'
 with open(path) as f:
     content = f.read()
 
-# Replace the entire signingConfigs block — keep only the outer structure, remove all content
-# This makes the release config empty (uses default debug signing)
-old_signing_block = '''    signingConfigs {
-        release {
+# Replace the full release signingConfig with just the else-branch fallback
+# (when no CM_KEYSTORE_PATH is set, use null storeFile which is fine for debug)
+old_release = '''        release {
             if (System.getenv()["CI"]) { // CI=true is exported by Codemagic
                 storeFile file(System.getenv()["CM_KEYSTORE_PATH"])
                 storePassword System.getenv()["CM_KEYSTORE_PASSWORD"]
@@ -23,37 +23,19 @@ old_signing_block = '''    signingConfigs {
                 storeFile keystoreProperties['storeFile'] ? file(keystoreProperties['storeFile']) : null
                 storePassword keystoreProperties['storePassword']
             }
-        }
-        debug {
-            if (keystorePropertiesFile.exists()) {
-                keyAlias keystoreProperties['keyAlias']
-                keyPassword keystoreProperties['keyPassword']
-                storeFile keystoreProperties['storeFile'] ? file(keystoreProperties['storeFile']) : null
-                storePassword keystoreProperties['storePassword']
-            }
         }'''
 
-new_signing_block = '''    signingConfigs {
-        release {
-        }
-        debug {
+new_release = '''        release {
+            // BYPASS: no release signing needed for debug sideload
         }'''
 
-if old_signing_block in content:
-    content = content.replace(old_signing_block, new_signing_block)
-    print('signingConfigs block replaced')
-else:
-    print('WARNING: exact block not found - trying regex fallback')
-    content = re.sub(
-        r'signingConfigs \{.*?(?=\n    \})\n    \}',
-        'signingConfigs {\n        release {\n        }\n        debug {\n        }\n    }',
-        content,
-        count=1,
-        flags=re.DOTALL
-    )
+if old_release in content:
+    content = content.replace(old_release, new_release)
+    print('release signingConfig simplified')
 
-# Remove signingConfig references in buildTypes (optional for debug)
-content = content.replace('signingConfig signingConfigs.release', '// signingConfig removed')
+# Remove signingConfig signingConfigs.release from release buildType only
+# (debug buildType doesn't have it)
+content = content.replace('signingConfig signingConfigs.release', '// signingConfig removed for sideload')
 
 with open(path, 'w') as f:
     f.write(content)

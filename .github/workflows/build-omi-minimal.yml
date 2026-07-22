@@ -1,4 +1,4 @@
-name: Build Omi APK (Minimal — Auth + AutoUpload only)
+name: Build Omi APK Minimal
 
 on:
   workflow_dispatch:

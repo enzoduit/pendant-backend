@@ -1,0 +1,70 @@
+name: Build Omi APK (Minimal — Auth + AutoUpload only)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'patch_omi_minimal.py'
+      - '.github/workflows/build-omi-minimal.yml'
+
+jobs:
+  build:
+    name: Build Omi Android APK (Minimal Patches)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout pendant-backend
+        uses: actions/checkout@v4
+
+      - name: Clone Omi app (fresh, depth 1)
+        run: git clone --depth 1 https://github.com/BasedHardware/omi /tmp/omi
+
+      - name: Create app/.env
+        working-directory: /tmp/omi
+        run: |
+          printf 'API_BASE_URL=https://pendant.enzoduit.com/\nOPENAI_API_KEY=\nGOOGLE_MAPS_API_KEY=\nGOOGLE_CLIENT_ID=\nGOOGLE_CLIENT_SECRET=\nUSE_WEB_AUTH=false\nUSE_AUTH_CUSTOM_TOKEN=false\nSTAGING_API_URL=\nPOSTHOG_API_KEY=\n' > app/.env
+
+      - name: Copy prebuilt Firebase config
+        working-directory: /tmp/omi
+        run: |
+          mkdir -p app/android/app/src/prod
+          cp app/setup/prebuilt/google-services.json app/android/app/src/prod/google-services.json
+          cp app/setup/prebuilt/firebase_options.dart app/lib/firebase_options_prod.dart
+          cp app/setup/prebuilt/firebase_options.dart app/lib/firebase_options_dev.dart
+
+      - name: Apply minimal patches
+        run: |
+          cp $GITHUB_WORKSPACE/patch_omi_minimal.py /tmp/omi/patch_omi_minimal.py
+          cd /tmp/omi && python3 patch_omi_minimal.py
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.32.x'
+          channel: stable
+
+      - name: Flutter pub get
+        working-directory: /tmp/omi/app
+        run: flutter pub get
+
+      - name: Build runner (code gen)
+        working-directory: /tmp/omi/app
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Build APK (debug, prod flavor)
+        working-directory: /tmp/omi/app
+        run: flutter build apk --debug --flavor prod --no-tree-shake-icons
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: omi-minimal-debug
+          path: /tmp/omi/app/build/app/outputs/flutter-apk/app-prod-debug.apk
+          retention-days: 14

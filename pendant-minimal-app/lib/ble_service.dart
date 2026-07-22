@@ -147,7 +147,7 @@ class BleService {
       return;
     }
 
-    await _sendEnableDataStream(device);
+    await _initializePendant(device, services);
     _log('Subscribing to audio char: ${audioChar.uuid.str}');
     _audioWriter = AudioWriter();
     await _audioWriter!.open();
@@ -214,6 +214,12 @@ class BleService {
     return msg;
   }
 
+  List<int> _buildSetCurrentTime(int timestampMs) {
+    final timeMsg = _encodeInt64Field(1, timestampMs);
+    final cmd = [..._encodeMessage(6, timeMsg), ..._encodeRequestData()];
+    return _encodeBleWrapper(cmd);
+  }
+
   List<int> _buildEnableDataStream({bool enable = true}) {
     final msg = <int>[];
     msg.addAll(_encodeField(1, 0, [0x00]));
@@ -222,27 +228,45 @@ class BleService {
     return _encodeBleWrapper(cmd);
   }
 
-  Future<void> _sendEnableDataStream(BluetoothDevice device) async {
-    try {
-      final services = await device.discoverServices();
-      BluetoothCharacteristic? txChar;
-      for (final svc in services) {
-        if (svc.uuid.str.toLowerCase() == kAudioServiceUuid.toLowerCase()) {
-          for (final c in svc.characteristics) {
-            if (c.uuid.str.toLowerCase() == kTxCharUuid.toLowerCase()) {
-              txChar = c;
-              break;
-            }
+  Future<void> _initializePendant(BluetoothDevice device, List<BluetoothService> services) async {
+    // Find TX char from already-discovered services
+    BluetoothCharacteristic? txChar;
+    for (final svc in services) {
+      if (svc.uuid.str.toLowerCase() == kAudioServiceUuid.toLowerCase()) {
+        for (final c in svc.characteristics) {
+          if (c.uuid.str.toLowerCase() == kTxCharUuid.toLowerCase()) {
+            txChar = c;
+            break;
           }
         }
       }
-      if (txChar != null) {
-        final cmd = _buildEnableDataStream();
-        await txChar.write(cmd, withoutResponse: true);
-        _log('✓ Enable data stream sent to pendant');
-      } else {
-        _log('TX char not found — skipping enable command');
-      }
+    }
+
+    if (txChar == null) {
+      _log('TX char not found — cannot initialize');
+      return;
+    }
+
+    // Step 1: Wait for pendant to settle
+    await Future.delayed(const Duration(seconds: 1));
+
+    // Step 2: Time sync (required before enable data stream)
+    try {
+      final timeCmd = _buildSetCurrentTime(DateTime.now().millisecondsSinceEpoch);
+      await txChar.write(timeCmd, withoutResponse: true);
+      _log('✓ Time sync sent');
+    } catch (e) {
+      _log('Time sync error: $e');
+    }
+
+    // Step 3: Wait
+    await Future.delayed(const Duration(seconds: 1));
+
+    // Step 4: Enable data stream
+    try {
+      final enableCmd = _buildEnableDataStream();
+      await txChar.write(enableCmd, withoutResponse: true);
+      _log('✓ Enable data stream sent');
     } catch (e) {
       _log('Enable data stream error: $e');
     }

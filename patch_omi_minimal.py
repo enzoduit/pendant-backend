@@ -129,3 +129,20 @@ gradle = gradle.replace(
 with open(build_gradle_path, "w") as f:
     f.write(gradle)
 print("✅ applicationId changed to com.enzoduit.omi.listen (namespace unchanged)")
+
+# ─── 5. Update google-services.json to match new applicationId ───────────────
+import json as json_mod
+
+gservices_path = "app/android/app/src/prod/google-services.json"
+with open(gservices_path) as f:
+    gs = json_mod.load(f)
+
+for client in gs.get("client", []):
+    info = client.get("client_info", {})
+    android_info = info.get("android_client_info", {})
+    if android_info.get("package_name") == "com.friend.ios":
+        android_info["package_name"] = "com.enzoduit.omi.listen"
+        print("✅ google-services.json package_name updated")
+
+with open(gservices_path, "w") as f:
+    json_mod.dump(gs, f, indent=2)

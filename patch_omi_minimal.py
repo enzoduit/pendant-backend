@@ -111,3 +111,40 @@ if target in prefs and "seedLimitlessDevice" not in prefs:
     print("✅ SharedPreferencesUtil.seedLimitlessDevice() added")
 else:
     print(f"prefs: found={target in prefs}, already={'seedLimitlessDevice' in prefs}")
+
+# ─── 4. Change package ID to avoid Android signing/identity conflict ─────────
+import subprocess
+
+# Update applicationId in build.gradle
+build_gradle = "app/android/app/build.gradle"
+with open(build_gradle) as f:
+    gradle = f.read()
+
+gradle = gradle.replace(
+    'applicationId "com.friend.ios"',
+    'applicationId "com.enzoduit.listen"'
+)
+gradle = gradle.replace(
+    'applicationId "com.friend.ios.dev"',
+    'applicationId "com.enzoduit.listen.dev"'
+)
+
+with open(build_gradle, "w") as f:
+    f.write(gradle)
+print("✅ applicationId changed to com.enzoduit.listen")
+
+# Update namespace
+gradle2 = open(build_gradle).read()
+gradle2 = gradle2.replace('namespace "com.friend.ios"', 'namespace "com.enzoduit.listen"')
+open(build_gradle, "w").write(gradle2)
+
+# Update MainActivity.kt
+import os
+for root, dirs, files in os.walk("app/android"):
+    for fname in files:
+        if fname == "MainActivity.kt":
+            path = os.path.join(root, fname)
+            content = open(path).read()
+            content = content.replace("package com.friend.ios", "package com.enzoduit.listen")
+            open(path, "w").write(content)
+            print(f"✅ MainActivity.kt package updated: {path}")

@@ -24,17 +24,30 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.6'
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
 
-      - name: Build debug APK
+      - name: Build debug APK (auto-signed by Gradle)
         working-directory: /tmp/listen-app
-        run: ./gradlew assembleDebug
-
-      - name: Sign APK
         run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+          echo "Built APK:"
+          ls -lh app/build/outputs/apk/debug/
+
+      - name: Zipalign APK
+        run: |
+          ZIPALIGN=$(find $ANDROID_HOME/build-tools -name "zipalign" 2>/dev/null | sort -r | head -1)
+          echo "zipalign: $ZIPALIGN"
+          $ZIPALIGN -v -p 4 \
+            /tmp/listen-app/app/build/outputs/apk/debug/app-debug.apk \
+            /tmp/listen-aligned.apk
+          echo "Aligned APK size: $(ls -lh /tmp/listen-aligned.apk | awk '{print $5}')"
+
+      - name: Sign with debug keystore
+        run: |
+          APKSIGNER=$(find $ANDROID_HOME/build-tools -name "apksigner" 2>/dev/null | sort -r | head -1)
+          echo "apksigner: $APKSIGNER"
           mkdir -p ~/.android
           keytool -genkeypair -v \
             -keystore ~/.android/debug.keystore \
@@ -44,8 +57,6 @@ jobs:
             -storepass android \
             -keypass android \
             -dname "CN=Android Debug,O=Android,C=US" 2>/dev/null || true
-          APKSIGNER=$(find /usr/local/lib/android/sdk/build-tools -name "apksigner" 2>/dev/null | sort -r | head -1)
-          echo "apksigner: $APKSIGNER"
           $APKSIGNER sign \
             --ks ~/.android/debug.keystore \
             --ks-key-alias androiddebugkey \
@@ -54,13 +65,13 @@ jobs:
             --v1-signing-enabled true \
             --v2-signing-enabled true \
             --v3-signing-enabled true \
-            --out /tmp/listen-debug-signed.apk \
-            /tmp/listen-app/app/build/outputs/apk/debug/app-debug.apk
-          echo "Signed APK size: $(ls -lh /tmp/listen-debug-signed.apk | awk '{print $5}')"
+            --out /tmp/listen-final.apk \
+            /tmp/listen-aligned.apk
+          echo "Final APK size: $(ls -lh /tmp/listen-final.apk | awk '{print $5}')"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: listen-debug
-          path: /tmp/listen-debug-signed.apk
+          path: /tmp/listen-final.apk
           retention-days: 14

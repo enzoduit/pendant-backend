@@ -32,6 +32,7 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
   }
 
   Future<void> _init() async {
+    await uploader.loadHistory();
     final ok = await requestPermissions();
     _addLog(ok ? 'Permissions granted' : 'Some permissions denied');
 
@@ -132,10 +133,10 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
         : '—';
 
     return Scaffold(
-      backgroundColor: const Color(0xFF13111C),
+      backgroundColor: const Color(0xFF0A0A0F),
       appBar: AppBar(
-        title: const Text('Pendant Sync', style: TextStyle(fontWeight: FontWeight.bold)),
-        backgroundColor: const Color(0xFF1E1E2E),
+        title: const Text('Listen', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 2)),
+        backgroundColor: const Color(0xFF0A0A0F),
         elevation: 0,
         bottom: TabBar(
           controller: _tabController,
@@ -144,7 +145,7 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
           unselectedLabelColor: Colors.white38,
           tabs: const [
             Tab(text: 'Status', icon: Icon(Icons.bluetooth, size: 16)),
-            Tab(text: 'Files', icon: Icon(Icons.folder_outlined, size: 16)),
+            Tab(text: 'History', icon: Icon(Icons.history, size: 16)),
           ],
         ),
       ),
@@ -171,7 +172,7 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
             width: double.infinity,
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: const Color(0xFF2D2D44),
+              color: const Color(0xFF161622),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: _statusColor.withOpacity(0.3), width: 1),
             ),
@@ -239,7 +240,7 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
           Expanded(
             child: Container(
               decoration: BoxDecoration(
-                color: const Color(0xFF1A1A2E),
+                color: const Color(0xFF0D0D1A),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: ListView.builder(
@@ -305,69 +306,64 @@ class _StatusScreenState extends State<StatusScreen> with SingleTickerProviderSt
   }
 
   Widget _buildFilesTab() {
-    return RefreshIndicator(
-      onRefresh: _refreshFiles,
-      child: _localFiles.isEmpty
-          ? const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.folder_open, size: 48, color: Colors.white24),
-                  SizedBox(height: 12),
-                  Text('No local audio files', style: TextStyle(color: Colors.white38)),
-                  SizedBox(height: 4),
-                  Text('Files appear here after BLE recording', style: TextStyle(fontSize: 11, color: Colors.white24)),
-                ],
-              ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-              itemCount: _localFiles.length,
-              itemBuilder: (ctx, i) {
-                final f = _localFiles[i];
-                final time = '${f.modified.hour.toString().padLeft(2,'0')}:${f.modified.minute.toString().padLeft(2,'0')}';
-                final date = '${f.modified.day.toString().padLeft(2,'0')}.${f.modified.month.toString().padLeft(2,'0')}';
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF2D2D44),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.audio_file, color: Color(0xFF6C63FF), size: 20),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '${date} ${time}',
-                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                            ),
-                            Text(
-                              '${f.sizeKb} KB  ·  ${f.name.length > 30 ? f.name.substring(0, 30) + '…' : f.name}',
-                              style: const TextStyle(fontSize: 10, color: Colors.white38),
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.upload, size: 18, color: Color(0xFF6C63FF)),
-                        tooltip: 'Upload',
-                        onPressed: () async {
-                          _addLog('Manual upload: ${f.name}');
-                          final ok = await uploader.uploadFile(f.path);
-                          _addLog(ok ? '✓ Done' : '✗ Failed');
-                          await _refreshFiles();
-                        },
-                      ),
-                    ],
-                  ),
-                );
-              },
+    final history = uploader.history;
+    if (history.isEmpty) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.history, size: 48, color: Colors.white24),
+            SizedBox(height: 12),
+            Text('No uploads yet', style: TextStyle(color: Colors.white38)),
+            SizedBox(height: 4),
+            Text('History appears after first upload', style: TextStyle(fontSize: 11, color: Colors.white24)),
+          ],
+        ),
+      );
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+      itemCount: history.length,
+      itemBuilder: (ctx, i) {
+        final r = history[i];
+        final time = '${r.time.hour.toString().padLeft(2,'0')}:${r.time.minute.toString().padLeft(2,'0')}';
+        final date = '${r.time.day.toString().padLeft(2,'0')}.${r.time.month.toString().padLeft(2,'0')}';
+        return Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF161622),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: r.success ? Colors.greenAccent.withOpacity(0.2) : Colors.redAccent.withOpacity(0.2),
+              width: 1,
             ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                r.success ? Icons.check_circle_outline : Icons.error_outline,
+                color: r.success ? Colors.greenAccent : Colors.redAccent,
+                size: 20,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '$date  $time  ·  ${r.sizeKb} KB',
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                    ),
+                    if (r.error != null)
+                      Text(r.error!, style: const TextStyle(fontSize: 10, color: Colors.redAccent)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -390,7 +386,7 @@ class _StatCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: const Color(0xFF2D2D44),
+        color: const Color(0xFF161622),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(

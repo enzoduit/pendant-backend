@@ -148,3 +148,21 @@ for root, dirs, files in os.walk("app/android"):
             content = content.replace("package com.friend.ios", "package com.enzoduit.listen")
             open(path, "w").write(content)
             print(f"✅ MainActivity.kt package updated: {path}")
+
+# ─── 5. Update google-services.json with new package name ────────────────────
+import json as json_mod
+
+gservices_path = "app/android/app/src/prod/google-services.json"
+with open(gservices_path) as f:
+    gs = json_mod.load(f)
+
+# Update package name in all client entries
+for client in gs.get("client", []):
+    info = client.get("client_info", {})
+    android_info = info.get("android_client_info", {})
+    if android_info.get("package_name") == "com.friend.ios":
+        android_info["package_name"] = "com.enzoduit.listen"
+        print("✅ google-services.json package_name updated")
+
+with open(gservices_path, "w") as f:
+    json_mod.dump(gs, f, indent=2)

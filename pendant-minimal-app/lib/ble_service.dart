@@ -147,6 +147,7 @@ class BleService {
       return;
     }
 
+    await _sendEnableDataStream(device);
     _log('Subscribing to audio char: ${audioChar.uuid.str}');
     _audioWriter = AudioWriter();
     await _audioWriter!.open();
@@ -157,6 +158,94 @@ class BleService {
     _dataSub = audioChar.onValueReceived.listen(_onAudioPacket);
 
     _resetSilenceTimer();
+  }
+
+  // ── Limitless Pendant Protobuf Helpers ─────────────────────────────────
+  int _messageIndex = 0;
+  int _requestId = 0;
+
+  List<int> _encodeVarint(int value) {
+    final result = <int>[];
+    while (value > 0x7f) {
+      result.add((value & 0x7f) | 0x80);
+      value >>= 7;
+    }
+    result.add(value & 0x7f);
+    return result.isNotEmpty ? result : [0];
+  }
+
+  List<int> _encodeField(int fieldNum, int wireType, List<int> value) {
+    final tag = (fieldNum << 3) | wireType;
+    return [..._encodeVarint(tag), ...value];
+  }
+
+  List<int> _encodeBytesField(int fieldNum, List<int> data) {
+    final length = _encodeVarint(data.length);
+    return _encodeField(fieldNum, 2, [...length, ...data]);
+  }
+
+  List<int> _encodeMessage(int fieldNum, List<int> msgBytes) {
+    return _encodeBytesField(fieldNum, msgBytes);
+  }
+
+  List<int> _encodeInt32Field(int fieldNum, int value) {
+    return _encodeField(fieldNum, 0, _encodeVarint(value));
+  }
+
+  List<int> _encodeInt64Field(int fieldNum, int value) {
+    return _encodeField(fieldNum, 0, _encodeVarint(value));
+  }
+
+  List<int> _encodeRequestData() {
+    _requestId++;
+    final msg = <int>[];
+    msg.addAll(_encodeInt64Field(1, _requestId));
+    msg.addAll(_encodeField(2, 0, [0x00]));
+    return _encodeMessage(30, msg);
+  }
+
+  List<int> _encodeBleWrapper(List<int> payload) {
+    final msg = <int>[];
+    msg.addAll(_encodeInt32Field(1, _messageIndex));
+    msg.addAll(_encodeInt32Field(2, 0));
+    msg.addAll(_encodeInt32Field(3, 1));
+    msg.addAll(_encodeBytesField(4, payload));
+    _messageIndex++;
+    return msg;
+  }
+
+  List<int> _buildEnableDataStream({bool enable = true}) {
+    final msg = <int>[];
+    msg.addAll(_encodeField(1, 0, [0x00]));
+    msg.addAll(_encodeField(2, 0, [enable ? 0x01 : 0x00]));
+    final cmd = [..._encodeMessage(8, msg), ..._encodeRequestData()];
+    return _encodeBleWrapper(cmd);
+  }
+
+  Future<void> _sendEnableDataStream(BluetoothDevice device) async {
+    try {
+      final services = await device.discoverServices();
+      BluetoothCharacteristic? txChar;
+      for (final svc in services) {
+        if (svc.uuid.str.toLowerCase() == kAudioServiceUuid.toLowerCase()) {
+          for (final c in svc.characteristics) {
+            if (c.uuid.str.toLowerCase() == kTxCharUuid.toLowerCase()) {
+              txChar = c;
+              break;
+            }
+          }
+        }
+      }
+      if (txChar != null) {
+        final cmd = _buildEnableDataStream();
+        await txChar.write(cmd, withoutResponse: true);
+        _log('✓ Enable data stream sent to pendant');
+      } else {
+        _log('TX char not found — skipping enable command');
+      }
+    } catch (e) {
+      _log('Enable data stream error: $e');
+    }
   }
 
   void _onAudioPacket(List<int> data) {

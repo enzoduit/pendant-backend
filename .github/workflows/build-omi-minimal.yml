@@ -41,25 +41,18 @@ jobs:
 
       - name: Patch build.gradle (fix null signing config)
         run: |
-          python3 << 'EOF'
-import re
+          # Replace Codemagic signing block with empty config to avoid null storeFile crash
+          sed -i '/signingConfigs {/,/^    }/{ /signingConfigs {/!{ /^    }/!d } }' /tmp/omi/app/android/app/build.gradle || true
+          # Use Python for reliable multi-line replacement
+          python3 -c "
+import re, sys
 path = '/tmp/omi/app/android/app/build.gradle'
-with open(path) as f:
-    content = f.read()
-# Remove Codemagic CI block — replace with empty signingConfigs
-content = re.sub(
-    r'signingConfigs \{.*?\}\s*\}',
-    'signingConfigs { release { } debug { } }',
-    content,
-    flags=re.DOTALL,
-    count=1
-)
-# Remove signingConfig signingConfigs.release references
+content = open(path).read()
+content = re.sub(r'signingConfigs \{[^}]*(?:\{[^}]*\}[^}]*)*\}', 'signingConfigs { release { } debug { } }', content, count=1, flags=re.DOTALL)
 content = content.replace('signingConfig signingConfigs.release', '')
-with open(path, 'w') as f:
-    f.write(content)
+open(path, 'w').write(content)
 print('build.gradle patched')
-EOF
+          "
 
       - name: Set up Java
         uses: actions/setup-java@v4

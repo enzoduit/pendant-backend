@@ -170,13 +170,16 @@ with open(gservices_path, "w") as f:
 # ─── 6. Remove package attribute from AndroidManifest.xml ────────────────────
 import re as re_mod
 
-manifest_path = "app/android/app/src/main/AndroidManifest.xml"
-with open(manifest_path) as f:
-    manifest = f.read()
-
-# Remove package="com.friend.ios" attribute from manifest tag
-manifest = re_mod.sub(r'\s+package="com\.friend\.ios"', '', manifest)
-
-with open(manifest_path, "w") as f:
-    f.write(manifest)
-print("✅ AndroidManifest.xml package attribute removed")
+import os as os_mod
+# Remove package="com.friend.ios" from ALL AndroidManifest.xml files
+for root, dirs, files in os_mod.walk("app/android"):
+    for fname in files:
+        if fname == "AndroidManifest.xml":
+            path = os_mod.path.join(root, fname)
+            with open(path) as f:
+                manifest = f.read()
+            if 'com.friend.ios' in manifest:
+                manifest = re_mod.sub(r'\s*package="com\.friend\.ios"', '', manifest)
+                with open(path, "w") as f:
+                    f.write(manifest)
+                print(f"✅ Removed package attribute from {path}")

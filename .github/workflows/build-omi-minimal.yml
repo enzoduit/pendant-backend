@@ -59,6 +59,8 @@ jobs:
 
       - name: Build APK (debug, prod flavor)
         working-directory: /tmp/omi/app
+        env:
+          CI: false  # Prevent Codemagic signing config from activating
         run: flutter build apk --debug --flavor prod --no-tree-shake-icons
 
       - name: Upload APK artifact

@@ -38,6 +38,29 @@ jobs:
           cp $GITHUB_WORKSPACE/patch_omi_minimal.py /tmp/omi/patch_omi_minimal.py
           cd /tmp/omi && python3 patch_omi_minimal.py
 
+
+      - name: Patch build.gradle (fix null signing config)
+        run: |
+          python3 << 'EOF'
+import re
+path = '/tmp/omi/app/android/app/build.gradle'
+with open(path) as f:
+    content = f.read()
+# Remove Codemagic CI block — replace with empty signingConfigs
+content = re.sub(
+    r'signingConfigs \{.*?\}\s*\}',
+    'signingConfigs { release { } debug { } }',
+    content,
+    flags=re.DOTALL,
+    count=1
+)
+# Remove signingConfig signingConfigs.release references
+content = content.replace('signingConfig signingConfigs.release', '')
+with open(path, 'w') as f:
+    f.write(content)
+print('build.gradle patched')
+EOF
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:

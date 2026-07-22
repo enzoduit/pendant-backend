@@ -51,6 +51,9 @@ jobs:
             --ks-key-alias androiddebugkey \
             --ks-pass pass:android \
             --key-pass pass:android \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
             --out /tmp/listen-debug-signed.apk \
             /tmp/listen-app/app/build/outputs/apk/debug/app-debug.apk
           echo "Signed APK size: $(ls -lh /tmp/listen-debug-signed.apk | awk '{print $5}')"

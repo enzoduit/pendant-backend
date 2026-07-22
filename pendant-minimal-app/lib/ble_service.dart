@@ -220,6 +220,15 @@ class BleService {
     return _encodeBleWrapper(cmd);
   }
 
+  List<int> _buildDownloadFlashPages({bool batchMode = true, bool realTime = false}) {
+    // Triggers WAL/flash drain: pendant sends stored recordings over BLE
+    final msg = <int>[];
+    msg.addAll(_encodeField(1, 0, [batchMode ? 0x01 : 0x00]));
+    msg.addAll(_encodeField(2, 0, [realTime ? 0x01 : 0x00]));
+    final cmd = [..._encodeMessage(8, msg), ..._encodeRequestData()];
+    return _encodeBleWrapper(cmd);
+  }
+
   List<int> _buildEnableDataStream({bool enable = true}) {
     final msg = <int>[];
     msg.addAll(_encodeField(1, 0, [0x00]));
@@ -262,19 +271,26 @@ class BleService {
     // Step 3: Wait
     await Future.delayed(const Duration(seconds: 1));
 
-    // Step 4: Enable data stream
+    // Step 4: Download flash pages (batch mode drain)
+    // Pendant is in batch mode — records to flash, drains via BLE on command
     try {
-      final enableCmd = _buildEnableDataStream();
-      await txChar.write(enableCmd, withoutResponse: true);
-      _log('✓ Enable data stream sent');
+      final batchCmd = _buildDownloadFlashPages(batchMode: true, realTime: false);
+      _log('Sending batch drain command: ${batchCmd.map((b) => b.toRadixString(16).padLeft(2,'0')).join(' ')}');
+      await txChar.write(batchCmd, withoutResponse: false);
+      _log('✓ Batch drain command sent — pendant should send WAL files');
     } catch (e) {
-      _log('Enable data stream error: $e');
+      _log('Batch drain error: $e');
     }
   }
 
   void _onAudioPacket(List<int> data) {
     if (data.isEmpty) return;
     _packetCount++;
+    if (_packetCount <= 3) {
+      // Log first 3 packets for debugging
+      final hex = data.take(16).map((b) => b.toRadixString(16).padLeft(2,'0')).join(' ');
+      _log('RX packet #$_packetCount: ${data.length}b  [$hex...]');
+    }
     _audioWriter?.write(Uint8List.fromList(data));
     onBytesReceived?.call(data.length);
     _resetSilenceTimer();

@@ -166,3 +166,17 @@ for client in gs.get("client", []):
 
 with open(gservices_path, "w") as f:
     json_mod.dump(gs, f, indent=2)
+
+# ─── 6. Remove package attribute from AndroidManifest.xml ────────────────────
+import re as re_mod
+
+manifest_path = "app/android/app/src/main/AndroidManifest.xml"
+with open(manifest_path) as f:
+    manifest = f.read()
+
+# Remove package="com.friend.ios" attribute from manifest tag
+manifest = re_mod.sub(r'\s+package="com\.friend\.ios"', '', manifest)
+
+with open(manifest_path, "w") as f:
+    f.write(manifest)
+print("✅ AndroidManifest.xml package attribute removed")

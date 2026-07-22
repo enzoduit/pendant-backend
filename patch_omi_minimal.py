@@ -112,74 +112,20 @@ if target in prefs and "seedLimitlessDevice" not in prefs:
 else:
     print(f"prefs: found={target in prefs}, already={'seedLimitlessDevice' in prefs}")
 
-# ─── 4. Change package ID to avoid Android signing/identity conflict ─────────
-import subprocess
-
-# Update applicationId in build.gradle
-build_gradle = "app/android/app/build.gradle"
-with open(build_gradle) as f:
+# ─── 4. Change applicationId only (not namespace/package) ───────────────────
+# applicationId is what Android/Play Store uses to identify the app.
+# Changing it makes Android treat this as a completely new app (no signing conflict).
+# namespace stays as com.friend.ios so all Kotlin code compiles correctly.
+build_gradle_path = "app/android/app/build.gradle"
+with open(build_gradle_path) as f:
     gradle = f.read()
 
+# Change only the prod applicationId, not namespace
 gradle = gradle.replace(
-    'applicationId "com.friend.ios"',
-    'applicationId "com.enzoduit.listen"'
-)
-gradle = gradle.replace(
-    'applicationId "com.friend.ios.dev"',
-    'applicationId "com.enzoduit.listen.dev"'
+    '            applicationId "com.friend.ios"',
+    '            applicationId "com.enzoduit.omi.listen"'
 )
 
-with open(build_gradle, "w") as f:
+with open(build_gradle_path, "w") as f:
     f.write(gradle)
-print("✅ applicationId changed to com.enzoduit.listen")
-
-# Update namespace
-gradle2 = open(build_gradle).read()
-gradle2 = gradle2.replace('namespace "com.friend.ios"', 'namespace "com.enzoduit.listen"')
-open(build_gradle, "w").write(gradle2)
-
-# Update MainActivity.kt
-import os
-for root, dirs, files in os.walk("app/android"):
-    for fname in files:
-        if fname == "MainActivity.kt":
-            path = os.path.join(root, fname)
-            content = open(path).read()
-            content = content.replace("package com.friend.ios", "package com.enzoduit.listen")
-            open(path, "w").write(content)
-            print(f"✅ MainActivity.kt package updated: {path}")
-
-# ─── 5. Update google-services.json with new package name ────────────────────
-import json as json_mod
-
-gservices_path = "app/android/app/src/prod/google-services.json"
-with open(gservices_path) as f:
-    gs = json_mod.load(f)
-
-# Update package name in all client entries
-for client in gs.get("client", []):
-    info = client.get("client_info", {})
-    android_info = info.get("android_client_info", {})
-    if android_info.get("package_name") == "com.friend.ios":
-        android_info["package_name"] = "com.enzoduit.listen"
-        print("✅ google-services.json package_name updated")
-
-with open(gservices_path, "w") as f:
-    json_mod.dump(gs, f, indent=2)
-
-# ─── 6. Remove package attribute from AndroidManifest.xml ────────────────────
-import re as re_mod
-
-import os as os_mod
-# Remove package="com.friend.ios" from ALL AndroidManifest.xml files
-for root, dirs, files in os_mod.walk("app/android"):
-    for fname in files:
-        if fname == "AndroidManifest.xml":
-            path = os_mod.path.join(root, fname)
-            with open(path) as f:
-                manifest = f.read()
-            if 'com.friend.ios' in manifest:
-                manifest = re_mod.sub(r'\s*package="com\.friend\.ios"', '', manifest)
-                with open(path, "w") as f:
-                    f.write(manifest)
-                print(f"✅ Removed package attribute from {path}")
+print("✅ applicationId changed to com.enzoduit.omi.listen (namespace unchanged)")

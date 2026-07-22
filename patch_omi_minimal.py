@@ -80,3 +80,34 @@ print("Done — 2 patches applied")
 # Wed Jul 22 08:35:43 AM UTC 2026
 # build trigger Wed Jul 22 09:19:58 AM UTC 2026
 # Wed Jul 22 10:45:13 AM UTC 2026
+
+# ─── 3. Add seedLimitlessDevice() to SharedPreferencesUtil ───────────────────
+prefs_path = f"{base}/backend/preferences.dart"
+with open(prefs_path) as f:
+    prefs = f.read()
+
+SEED_METHOD = """
+  // BYPASS: seed Limitless Pendant prefs so _maybeAutoUpload works
+  void seedLimitlessDevice() {
+    saveBool('autoSyncOfflineRecordings', true);
+    saveBool('useCustomStt', false);
+    saveBool('batchModeEnabled', true);
+    saveBool('unlimitedLocalStorageEnabled', true);
+    if (getString('btDevice')?.isEmpty != false) {
+      saveString('btDevice', '{"name":"Pendant","id":"FD:04:D0:EB:84:88","type":"limitless","rssi":-60,"locator":null,"modelNumber":"Limitless Pendant","firmwareRevision":"1.0.0","hardwareRevision":"Unknown","manufacturerName":"Limitless","serialNumber":null}');
+    }
+    saveBool('onboardingCompleted', true);
+    saveBool('deviceOnboardingCompleted', true);
+    saveBool('permissionsCompleted', true);
+    saveBool('aiConsentGiven', true);
+  }
+"""
+
+target = "class SharedPreferencesUtil {"
+if target in prefs and "seedLimitlessDevice" not in prefs:
+    prefs = prefs.replace(target, target + SEED_METHOD)
+    with open(prefs_path, "w") as f:
+        f.write(prefs)
+    print("✅ SharedPreferencesUtil.seedLimitlessDevice() added")
+else:
+    print(f"prefs: found={target in prefs}, already={'seedLimitlessDevice' in prefs}")

@@ -417,22 +417,61 @@ async def sync_local_files(request: Request):
             print(f"[sync] WAL decoded: {len(frames)} opus frames, sr={sample_rate}, fs={frame_size}")
 
             if frames:
-                import opuslib
-                decoder = opuslib.Decoder(sample_rate, channels)
-                wav_buf = io.BytesIO()
-                with wave.open(wav_buf, 'wb') as wf:
-                    wf.setnchannels(channels)
-                    wf.setsampwidth(2)  # 16-bit PCM
-                    wf.setframerate(sample_rate)
+                # Write raw opus frames into OGG container via ffmpeg (more robust than opuslib)
+                import subprocess, tempfile
+                # Write WAL frames as raw concatenated opus packets with OGG framing via ffmpeg
+                # First write frames to a temp raw file, then use ffmpeg to wrap in OGG
+                with tempfile.NamedTemporaryFile(suffix='.bin', delete=False) as tmp_in:
+                    tmp_in_path = tmp_in.name
+                    # Write as simple raw opus: just concatenate frames (ffmpeg can handle with -f data)
+                    # Actually write as OGG opus using ffmpeg pipe
                     for frame in frames:
-                        try:
-                            pcm = decoder.decode(bytes(frame), frame_size=frame_size)
-                            wf.writeframes(pcm)
-                        except Exception:
-                            continue  # skip bad frames
-                whisper_bytes = wav_buf.getvalue()
-                whisper_filename = "audio.wav"
-                print(f"[sync] opuslib decode ok: {len(whisper_bytes)} bytes WAV from {len(frames)} frames")
+                        tmp_in.write(struct.pack('<I', len(frame)))
+                        tmp_in.write(frame)
+                
+                tmp_wav_path = tmp_in_path + '.wav'
+                try:
+                    # Use ffmpeg to decode: read WAL format via python pipe → pcm → wav
+                    import opuslib
+                    decoder = opuslib.Decoder(sample_rate, channels)
+                    wav_buf = io.BytesIO()
+                    with wave.open(wav_buf, 'wb') as wf:
+                        wf.setnchannels(channels)
+                        wf.setsampwidth(2)
+                        wf.setframerate(sample_rate)
+                        good = 0
+                        for frame in frames:
+                            try:
+                                pcm = decoder.decode(bytes(frame), frame_size=frame_size)
+                                wf.writeframes(pcm)
+                                good += 1
+                            except Exception as fe:
+                                continue
+                    whisper_bytes = wav_buf.getvalue()
+                    whisper_filename = "audio.wav"
+                    print(f"[sync] opuslib decode: {good}/{len(frames)} frames ok, {len(whisper_bytes)} bytes WAV")
+                except Exception as oe:
+                    print(f"[sync] opuslib failed ({oe}), trying ffmpeg OGG concat")
+                    # Fallback: write raw frames concatenated as ogg-like and send directly
+                    raw_opus = b''.join(frames)
+                    # Use ffmpeg to convert raw opus frames to wav
+                    try:
+                        result = subprocess.run(
+                            ['ffmpeg', '-y', '-f', 'opus', '-i', 'pipe:0', '-ar', str(sample_rate), '-ac', str(channels), '-f', 'wav', 'pipe:1'],
+                            input=raw_opus, capture_output=True, timeout=30
+                        )
+                        if result.returncode == 0 and len(result.stdout) > 100:
+                            whisper_bytes = result.stdout
+                            whisper_filename = "audio.wav"
+                            print(f"[sync] ffmpeg decode ok: {len(whisper_bytes)} bytes WAV")
+                        else:
+                            print(f"[sync] ffmpeg failed: {result.stderr[:200]}")
+                    except Exception as fe2:
+                        print(f"[sync] ffmpeg also failed: {fe2}")
+                finally:
+                    import os as _os
+                    try: _os.unlink(tmp_in_path)
+                    except: pass
                 # Split into 24MB chunks if needed (Whisper limit is 25MB)
                 MAX_WHISPER_BYTES = 24 * 1024 * 1024
                 if len(whisper_bytes) > MAX_WHISPER_BYTES:

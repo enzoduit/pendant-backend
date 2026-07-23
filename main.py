@@ -115,6 +115,11 @@ def transcribe_with_whisper(audio_bytes: bytes, language: str = "en") -> str:
     return text
 
 # ---------------------------------------------------------------------------
+# Shared in-memory log (must be before /logs endpoints and sync functions)
+# ---------------------------------------------------------------------------
+_debug_log = []
+
+# ---------------------------------------------------------------------------
 # Health
 # ---------------------------------------------------------------------------
 
@@ -571,7 +576,6 @@ async def fair_use_status():
 # ---------------------------------------------------------------------------
 # Debug log endpoints — MUST be before the v1 catch-all
 # ---------------------------------------------------------------------------
-_debug_log = []
 
 @app.post("/v1/debug/log")
 async def debug_log_post(request: Request):

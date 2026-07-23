@@ -494,6 +494,42 @@ async def fair_use_status():
     return JSONResponse({"stage": "none", "status": "ok"})
 
 # ---------------------------------------------------------------------------
+# Debug log endpoints — MUST be before the v1 catch-all
+# ---------------------------------------------------------------------------
+_debug_log = []
+
+@app.post("/v1/debug/log")
+async def debug_log_post(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        data = {"raw": await request.text()}
+    entry = {"ts": datetime.datetime.utcnow().isoformat(), **data}
+    _debug_log.append(entry)
+    if len(_debug_log) > 1000:
+        _debug_log.pop(0)
+    msg = entry.get("msg", str(entry))
+    print(f"[APP] {entry.get('ts','')} {msg}")
+    try:
+        with open("/tmp/app_debug.log", "a") as f:
+            f.write(f"{entry.get('ts','')} {msg}\n")
+    except Exception:
+        pass
+    return JSONResponse({"ok": True})
+
+@app.get("/v1/debug/log")
+async def debug_log_get():
+    entries = list(_debug_log[-200:])
+    if not entries:
+        try:
+            with open("/tmp/app_debug.log", "r") as f:
+                lines = f.readlines()[-200:]
+            entries = [{"msg": l.strip()} for l in lines]
+        except Exception:
+            pass
+    return JSONResponse({"entries": entries})
+
+# ---------------------------------------------------------------------------
 # Catch-all for all other Omi endpoints
 # ---------------------------------------------------------------------------
 
@@ -535,42 +571,7 @@ async def v3_catchall(path: str, request: Request):
 
 
 # ---------------------------------------------------------------------------
-# Debug log endpoint — app sends decision trace here
-# ---------------------------------------------------------------------------
-_debug_log = []
-
-@app.post("/v1/debug/log")
-async def debug_log(request: Request):
-    try:
-        data = await request.json()
-    except Exception:
-        data = {"raw": await request.text()}
-    entry = {"ts": datetime.datetime.utcnow().isoformat(), **data}
-    _debug_log.append(entry)
-    if len(_debug_log) > 1000:
-        _debug_log.pop(0)
-    msg = entry.get("msg", str(entry))
-    print(f"[APP] {entry.get('ts','')} {msg}")
-    # Also write to file for persistence across restarts
-    try:
-        with open("/tmp/app_debug.log", "a") as f:
-            f.write(f"{entry.get('ts','')} {msg}\n")
-    except Exception:
-        pass
-    return JSONResponse({"ok": True})
-
-@app.get("/v1/debug/log")
-async def get_debug_log():
-    entries = list(_debug_log[-200:])
-    # Also try to read from file if in-memory is empty
-    if not entries:
-        try:
-            with open("/tmp/app_debug.log", "r") as f:
-                lines = f.readlines()[-200:]
-            entries = [{"msg": l.strip()} for l in lines]
-        except Exception:
-            pass
-    return JSONResponse({"entries": entries})
+# (debug log routes moved above v1 catch-all)
 
 
 # ---------------------------------------------------------------------------

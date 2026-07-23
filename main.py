@@ -378,6 +378,11 @@ async def sync_local_files(request: Request):
                 filename = val.filename or "audio.opus"
                 msg = f"[sync] received file: {filename} ({len(audio_bytes)} bytes)"
                 print(msg); _debug_log.append({"ts": datetime.datetime.utcnow().isoformat(), "msg": msg})
+                # Save every upload to disk for inspection
+                import os as _os
+                _os.makedirs("/tmp/pendant_uploads", exist_ok=True)
+                with open(f"/tmp/pendant_uploads/{filename}", "wb") as _f:
+                    _f.write(audio_bytes)
                 break
     else:
         audio_bytes = await request.body()

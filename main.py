@@ -371,7 +371,8 @@ async def sync_local_files(request: Request):
             if hasattr(val, "read"):
                 audio_bytes = await val.read()
                 filename = val.filename or "audio.opus"
-                print(f"[sync] received file: {filename} ({len(audio_bytes)} bytes)")
+                msg = f"[sync] received file: {filename} ({len(audio_bytes)} bytes)"
+                print(msg); _debug_log.append({"ts": datetime.datetime.utcnow().isoformat(), "msg": msg})
                 break
     else:
         audio_bytes = await request.body()
@@ -414,7 +415,8 @@ async def sync_local_files(request: Request):
                     break
                 frames.append(data[offset:offset + frame_len])
                 offset += frame_len
-            print(f"[sync] WAL decoded: {len(frames)} opus frames, sr={sample_rate}, fs={frame_size}")
+            msg2 = f"[sync] WAL decoded: {len(frames)} opus frames, sr={sample_rate}, fs={frame_size}"
+            print(msg2); _debug_log.append({"ts": datetime.datetime.utcnow().isoformat(), "msg": msg2})
 
             if frames:
                 # Write raw opus frames into OGG container via ffmpeg (more robust than opuslib)
@@ -449,7 +451,8 @@ async def sync_local_files(request: Request):
                                 continue
                     whisper_bytes = wav_buf.getvalue()
                     whisper_filename = "audio.wav"
-                    print(f"[sync] opuslib decode: {good}/{len(frames)} frames ok, {len(whisper_bytes)} bytes WAV")
+                    msg3 = f"[sync] opuslib decode: {good}/{len(frames)} frames ok, {len(whisper_bytes)} bytes WAV"
+                    print(msg3); _debug_log.append({"ts": datetime.datetime.utcnow().isoformat(), "msg": msg3})
                 except Exception as oe:
                     print(f"[sync] opuslib failed ({oe}), trying ffmpeg OGG concat")
                     # Fallback: write raw frames concatenated as ogg-like and send directly
@@ -527,9 +530,11 @@ async def sync_local_files(request: Request):
             )
             resp.raise_for_status()
             transcript = resp.json().get("text", "").strip()
-            print(f"[sync] transcript: {transcript[:100]}")
+            msg4 = f"[sync] transcript: '{transcript[:100]}'"
+            print(msg4); _debug_log.append({"ts": datetime.datetime.utcnow().isoformat(), "msg": msg4})
         except Exception as e:
-            print(f"[sync] Whisper error: {e}")
+            msg5 = f"[sync] Whisper error: {e}"
+            print(msg5); _debug_log.append({"ts": datetime.datetime.utcnow().isoformat(), "msg": msg5})
             return JSONResponse({
                 "failed_segments": 1, "total_segments": 1,
                 "new_memories": [], "updated_memories": [], "errors": [str(e)]

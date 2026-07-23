@@ -118,6 +118,37 @@ def transcribe_with_whisper(audio_bytes: bytes, language: str = "en") -> str:
 # Health
 # ---------------------------------------------------------------------------
 
+@app.post("/logs")
+async def logs_post(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        data = {"raw": await request.text()}
+    entry = {"ts": datetime.datetime.utcnow().isoformat(), **data}
+    _debug_log.append(entry)
+    if len(_debug_log) > 1000:
+        _debug_log.pop(0)
+    msg = entry.get("msg", str(data))
+    print(f"[APP] {entry['ts']} {msg}")
+    try:
+        with open("/tmp/app_debug.log", "a") as f:
+            f.write(f"{entry['ts']} {msg}\n")
+    except Exception:
+        pass
+    return JSONResponse({"ok": True})
+
+@app.get("/logs")
+async def logs_get():
+    entries = list(_debug_log[-200:])
+    if not entries:
+        try:
+            with open("/tmp/app_debug.log", "r") as f:
+                lines = f.readlines()[-200:]
+            entries = [{"msg": l.strip()} for l in lines]
+        except Exception:
+            pass
+    return JSONResponse({"entries": entries})
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}
